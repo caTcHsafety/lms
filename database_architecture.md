@@ -11,7 +11,7 @@
 | Create New Module modal | Admin | module belongs to `existing subject` OR `new subject` OR `new course`; fields: course, subject/folder, name, format (VIDEO/PPT/PDF/SCORM/LINK/QUIZ) |
 | New Revision modal | Admin | upload file, revision notes free text, publishes new version atomically |
 | Cohort Access — Cohort Detail | Admin | cohort has name, student count, module count, created_at; assigned modules show course·subject, type badge, status, last updated; cohort uploads section (cohort-private files) |
-| Create Cohort wizard (4 steps) | Admin | Step 1: cohort name + students_enrolled count; Step 2: select courses (multi-select, shows code + subject count); Steps 3–4 implied (select subjects/modules, confirm) |
+| Create Cohort wizard (4 steps) | Admin | Step 1: cohort name students_enrolled count; Step 2: select courses (multi-select, shows code + subject count); Steps 3–4 implied (select subjects/modules, confirm) |
 | Manage Cohort Content modal | Admin | same course multi-select; bottom bar shows running total of modules·subjects·courses |
 | User Mgmt — Mentors & Students | Admin | unassigned students queue (12 pending); mentor list with capacity bar (e.g. 3/20, 25/25 = AT CAPACITY shown red); student row has name, email, cohort tags (multi-cohort), status (Unassigned/Pending), enrolled date |
 | Add Mentor modal | Admin | name, email, capacity (int, default 15) |
