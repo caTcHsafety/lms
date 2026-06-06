@@ -75,11 +75,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         console.log("AuthContext: Fetching profile from database for user ID:", session.user.id);
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('role, must_reset_pw')
-          .eq('id', session.user.id)
-          .single();
+        const { data, error } = await Promise.race([
+          supabase
+            .from('profiles')
+            .select('role, must_reset_pw')
+            .eq('id', session.user.id)
+            .single(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
+          ),
+        ]);
 
         if (error) {
           console.error("AuthContext: Error fetching profile from database:", error);
@@ -108,13 +113,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const cachedRole = localStorage.getItem('cached_role') as Role;
         const cachedMustReset = localStorage.getItem('cached_must_reset_pw') === 'true';
         if (mounted) {
-          setState(s => ({
-            ...s,
+          setState({
             session,
             user: session?.user || null,
             role: cachedRole || null,
             mustResetPw: cachedMustReset || false,
-          }));
+            isLoading: false,
+          });
         }
       } finally {
         setLoading(false);
