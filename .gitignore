@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local development artifacts
+local/
+
+# Kiro / Agent config
+.kiro/
+.agents/
+skills-lock.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# TestSprite
+testsprite_tests/
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Logs
+*.log
+npm-debug.log*
+
+# pnpm
+pnpm-workspace.yaml

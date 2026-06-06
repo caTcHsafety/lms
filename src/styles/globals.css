@@ -1,0 +1,124 @@
+/* ─── Global thin scrollbar ─────────────────────────────────────────────────
+   Applies a slim, low-opacity scrollbar to every scrollable element.
+   Uses !important to override any Tailwind arbitrary-variant scrollbar classes.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent !important;
+}
+
+/* Chrome / Safari / Edge — track */
+::-webkit-scrollbar {
+  width: 4px !important;
+  height: 4px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* thumb */
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15) !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28) !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Override any element-level [&::-webkit-scrollbar] Tailwind classes */
+*::-webkit-scrollbar {
+  width: 4px !important;
+  height: 4px !important;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15) !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28) !important;
+}
+
+/* ─── Utility: light thumb for dark backgrounds ──────────────────────────── */
+.thin-scrollbar-light,
+.thin-white-scrollbar {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent !important;
+}
+
+.thin-scrollbar-light::-webkit-scrollbar-thumb,
+.thin-white-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25) !important;
+}
+
+.thin-scrollbar-light::-webkit-scrollbar-thumb:hover,
+.thin-white-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* ─── Iframe fullscreen fix ──────────────────────────────────────────────────
+   When an iframe is fullscreened via the Fullscreen API, force it to fill
+   the entire viewport. Without this the iframe keeps its original dimensions.
+   ─────────────────────────────────────────────────────────────────────────── */
+iframe:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+iframe:-moz-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+iframe:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+/* When a parent div is fullscreened, make its iframe child fill it */
+:fullscreen iframe,
+:-webkit-full-screen iframe,
+:-moz-full-screen iframe {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+/* ─── Theater mode wrapper fullscreen ────────────────────────────────────────
+   When the theater wrapper is fullscreened, force it to fill the viewport.
+   ─────────────────────────────────────────────────────────────────────────── */
+#ispring-theater-wrapper:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  position: fixed !important;
+  inset: 0 !important;
+}
+
+#ispring-theater-wrapper:-moz-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  position: fixed !important;
+  inset: 0 !important;
+}
+
+#ispring-theater-wrapper:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  position: fixed !important;
+  inset: 0 !important;
+}
