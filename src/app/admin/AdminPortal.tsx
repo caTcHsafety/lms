@@ -3,7 +3,7 @@ import { Bell, Pencil } from "lucide-react";
 import svgPaths1 from "@/imports/SafetyCatchCreateNewSubjectModuleFlow-2/svg-lsxud8wepe";
 import svgPaths2 from "@/imports/SafetyCatchStudentManagementUpdatedAssignedStudentsModalApplied-2/svg-4g5ull6oa2";
 import imgUserAvatar from "@/imports/SafetyCatchCreateNewSubjectModuleFlow-2/9725b9588595ed588e8b73b3958f8e9f139d0e59.png";
-import imgBrandLogo from "@/imports/image.png";
+import imgBrandLogo from "@/assets/login/logo.png";
 import { NewsPublisherView } from "./components/news-publisher";
 import { SystemAnalyticsView } from "./components/system-analytics";
 import { ContentVaultRedesigned } from "./components/content-vault";

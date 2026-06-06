@@ -54,7 +54,7 @@
   height: 56px;
   width: auto;
   object-fit: contain;
-  filter: brightness(1.8) drop-shadow(0 2px 8px rgba(169, 207, 255, 0.3));
+  filter: brightness(1.2);
 }
 
 /* Header */
@@ -176,13 +176,13 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 16px rgba(169, 207, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(169, 207, 255, 0.15);
   width: 100%;
 }
 
 .signin-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(169, 207, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(169, 207, 255, 0.25);
   background: linear-gradient(135deg, #bde0ff 0%, #93c5fd 100%);
 }
 
