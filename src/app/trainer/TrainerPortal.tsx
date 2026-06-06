@@ -8,7 +8,6 @@ import type { Deck, TrainerKit, Broadcast } from "./data";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/auth/AuthContext";
 import { Loader2 } from "lucide-react";
-import { Toaster } from "sonner";
 
 export default function App() {
   const { user } = useAuth();
@@ -224,7 +223,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[#f3f3f5] font-['Inter'] antialiased">
-      <Toaster position="top-right" richColors />
       <TopNav route={route} onNavigate={setRoute} unread={unread} />
 
       {route === "dashboard" && (

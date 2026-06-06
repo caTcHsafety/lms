@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import { TopNav, type MentorView } from "./components/top-nav";
 import { Dashboard } from "./components/dashboard";
 import { Roster } from "./components/roster";
@@ -370,7 +370,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[#f3f3f5] font-['Inter'] antialiased">
-      <Toaster position="top-right" richColors />
       <TopNav
         view={view}
         onChange={(v) => setScreen({ name: v } as Screen)}

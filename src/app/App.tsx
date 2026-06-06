@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "sonner";
 import { StorageWarning } from "@/components/StorageWarning";
 import Login from "./auth/Login";
 import ForgotPassword from "./auth/ForgotPassword";
@@ -49,7 +49,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
-        <Toaster />
+        <Toaster position="top-right" richColors />
         <StorageWarning />
       </AuthProvider>
     </ErrorBoundary>
