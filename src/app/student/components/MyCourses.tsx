@@ -35,6 +35,7 @@ interface Lesson {
   duration: string;
   format?: string;
   url?: string | null;
+  videoUrl?: string | null;
   isIspring?: boolean;
   ispringUrl?: string | null;
 }
@@ -51,6 +52,13 @@ interface Course {
   modules: Module[];
 }
 
+function subjectCode(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "SB";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase().slice(0, 2);
+}
+
 function lessonKindMeta(kind: LessonKind) {
   switch (kind) {
     case "video": return { label: "VIDEO", icon: Video, bg: "#E8F1F7", fg: BLUE };
@@ -60,7 +68,7 @@ function lessonKindMeta(kind: LessonKind) {
   }
 }
 
-export function MyCourses() {
+export function MyCourses({ selectedCourseId, selectedLessonId }: { selectedCourseId?: string | null; selectedLessonId?: string | null }) {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,7 +175,8 @@ export function MyCourses() {
               .select(`
                 id, title, description,
                 modules (
-                  id, title, description, order_index, type, duration,
+                  id, title, description, order_index, type, duration, video_url, subject_id,
+                  subjects ( id, name ),
                   module_versions ( id, content_url, is_published, is_ispring, ispring_r2_url )
                 )
               `)
@@ -176,37 +185,45 @@ export function MyCourses() {
             if (dbCourses) {
               mapped = dbCourses.map((c: any) => {
                 const dbMods = ((c.modules || []) as any[]).sort((a,b) => a.order_index - b.order_index);
-                const uiLessons = dbMods.filter(m => unlockedModuleIds.has(m.id)).map(m => {
+                const subjectGroups = new Map<string, Module>();
+
+                dbMods.filter(m => unlockedModuleIds.has(m.id)).forEach(m => {
                   const publishedVersion = m.module_versions?.find((v: any) => v.is_published) || m.module_versions?.[0];
                   const isIspring = publishedVersion?.is_ispring === true;
-                  
-                  return {
+                  const subject = Array.isArray(m.subjects) ? m.subjects[0] : m.subjects;
+                  const subjectId = m.subject_id || subject?.id || `subject_${c.id}`;
+                  const subjectName = subject?.name || "General";
+
+                  if (!subjectGroups.has(subjectId)) {
+                    subjectGroups.set(subjectId, {
+                      id: subjectId,
+                      code: subjectCode(subjectName),
+                      title: subjectName,
+                      lessons: [],
+                    });
+                  }
+
+                  subjectGroups.get(subjectId)!.lessons.push({
                     id: m.id,
                     title: m.title,
                     desc: m.description || "",
                     kind: (m.type === "SLIDES" || m.type === "DOCUMENT" || m.type === "PDF" || m.type === "PPT" || m.type === "SCORM") ? "reading" : "video" as LessonKind,
-                    duration: m.duration || "15 min",
+                    duration: m.duration || "",
                     format: m.type || "VIDEO",
                     url: publishedVersion?.content_url || null,
+                    videoUrl: m.video_url || null,
                     isIspring,
                     ispringUrl: isIspring ? (publishedVersion?.ispring_r2_url || null) : null,
-                  };
+                  });
                 });
 
                 return {
                   id: c.id,
                   code: c.title.substring(0, 3).toUpperCase(),
                   title: c.title,
-                  modules: [
-                    {
-                      id: `mod_${c.id}`,
-                      code: "M1",
-                      title: "Course Content",
-                      lessons: uiLessons
-                    }
-                  ]
+                  modules: Array.from(subjectGroups.values())
                 };
-              }).filter((c: any) => c.modules[0].lessons.length > 0);
+              }).filter((c: any) => c.modules.some((m: Module) => m.lessons.length > 0));
 
               if (mapped.length > 0) {
                 localStorage.setItem(`student_courses_${user.id}`, JSON.stringify(mapped));
@@ -280,12 +297,19 @@ export function MyCourses() {
         const initialCourseIds: Record<string, boolean> = {};
         const initialOpenIds: Record<string, boolean> = {};
         let firstLessonId = "";
-        if (finalCourses.length > 0) {
-          initialCourseIds[finalCourses[0].id] = true;
-          initialOpenIds[finalCourses[0].modules[0].id] = true;
-          if (finalCourses[0].modules[0].lessons.length > 0) {
-            firstLessonId = finalCourses[0].modules[0].lessons[0].id;
-          }
+        const requestedCourse = selectedCourseId ? finalCourses.find((c) => c.id === selectedCourseId) : undefined;
+        const requestedLesson = requestedCourse && selectedLessonId
+          ? requestedCourse.modules.flatMap((m) => m.lessons).find((l) => l.id === selectedLessonId)
+          : undefined;
+        const initialCourse = requestedCourse || finalCourses[0];
+        const initialModule = requestedLesson
+          ? initialCourse?.modules.find((m) => m.lessons.some((l) => l.id === requestedLesson.id))
+          : initialCourse?.modules.find((m) => m.lessons.length > 0);
+        const initialLesson = requestedLesson || initialModule?.lessons[0];
+        if (initialCourse && initialModule && initialLesson) {
+          initialCourseIds[initialCourse.id] = true;
+          initialOpenIds[initialModule.id] = true;
+          firstLessonId = initialLesson.id;
         }
         setOpenCourseIds(initialCourseIds);
         setOpenIds(initialOpenIds);
@@ -297,7 +321,7 @@ export function MyCourses() {
       }
     })();
     return () => { isMounted = false; };
-  }, [user]);
+  }, [user, selectedCourseId, selectedLessonId]);
 const enrolledCourses = courses;
   const allLessons = courses.flatMap((c) => c.modules.flatMap((m) => m.lessons));
   const findCourseByLesson = (lessonId: string) => courses.find((c) => c.modules.some((m) => m.lessons.some((l) => l.id === lessonId)));
@@ -305,6 +329,26 @@ const enrolledCourses = courses;
   const current = allLessons.find((l) => l.id === currentId) ?? allLessons[0];
   const currentCourse = current ? findCourseByLesson(current.id) : null;
   const currentModule = current ? findModuleByLesson(current.id) : null;
+
+  const handledSelectionRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!selectedCourseId || courses.length === 0) return;
+    const selectionKey = `${selectedCourseId}:${selectedLessonId || ""}`;
+    if (handledSelectionRef.current === selectionKey) return;
+    
+    const selectedCourse = courses.find((c) => c.id === selectedCourseId);
+    const firstModule = selectedCourse?.modules.find((m) => m.lessons.length > 0);
+    const requestedLesson = selectedCourse?.modules.flatMap((m) => m.lessons).find((l) => l.id === selectedLessonId);
+    const targetLesson = requestedLesson || firstModule?.lessons[0];
+    const targetModule = targetLesson ? selectedCourse?.modules.find((m) => m.lessons.some((l) => l.id === targetLesson.id)) : firstModule;
+    if (!selectedCourse || !targetModule || !targetLesson) return;
+
+    setOpenCourseIds((currentOpen) => ({ ...currentOpen, [selectedCourse.id]: true }));
+    setOpenIds((currentOpen) => ({ ...currentOpen, [targetModule.id]: true }));
+    setCurrentId(targetLesson.id);
+    handledSelectionRef.current = selectionKey;
+  }, [selectedCourseId, selectedLessonId, courses]);
 
   useEffect(() => {
     if (current) {
@@ -698,7 +742,7 @@ const enrolledCourses = courses;
                               <button
                                 key={l.id}
                                 onClick={() => setCurrentId(l.id)}
-                                className="w-full text-left flex items-center gap-2.5 py-2 pr-3 transition-colors group"
+                                className="w-full text-left flex items-center gap-3 py-3 pr-4 transition-colors group"
                                 style={{
                                   paddingLeft: isCurrent ? basePad - 3 : basePad,
                                   borderLeft: isCurrent ? `3px solid ${BLUE}` : "3px solid transparent",
@@ -709,19 +753,24 @@ const enrolledCourses = courses;
                               >
                                 <div className="flex-shrink-0">
                                   {isDone ? (
-                                    <CheckCircle2 className="w-4 h-4" style={{ color: "#16A34A" }} />
+                                    <CheckCircle2 className="w-5 h-5" style={{ color: "#16A34A" }} />
                                   ) : (
                                     <Circle
-                                      className="w-4 h-4"
+                                      className="w-5 h-5"
                                       style={{ color: isCurrent ? BLUE : "#CBD3DB", fill: isCurrent ? BLUE : "transparent" }}
                                     />
                                   )}
                                 </div>
-                                <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: meta.fg }} />
+                                <span
+                                  className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
+                                  style={{ backgroundColor: meta.bg, color: meta.fg }}
+                                >
+                                  <Icon className="w-4 h-4" />
+                                </span>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between gap-1">
                                     <div
-                                      className="text-[12.5px] font-medium truncate"
+                                      className="text-sm font-semibold truncate"
                                       style={{ color: isCurrent ? BLUE : isDone ? TEXT_TERTIARY : TEXT_PRIMARY, textDecoration: isDone && !isCurrent ? "line-through" : "none" }}
                                     >
                                       {l.title}
@@ -735,9 +784,11 @@ const enrolledCourses = courses;
                                       )}
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-1.5 mt-0.5 text-[10.5px]" style={{ color: TEXT_TERTIARY }}>
-                                    <Clock className="w-2.5 h-2.5" /> {l.duration}
-                                  </div>
+                                  {l.duration && l.duration !== "N/A" && (
+                                    <div className="flex items-center gap-1.5 mt-1 text-xs font-medium" style={{ color: TEXT_TERTIARY }}>
+                                      <Clock className="w-3 h-3" /> {l.duration}
+                                    </div>
+                                  )}
                                 </div>
                               </button>
                             );
@@ -832,19 +883,19 @@ const enrolledCourses = courses;
                   <SegmentTab active={tab === "video"} onClick={() => setTab("video")} icon={<Video className="w-3.5 h-3.5" />}>Lecture Video</SegmentTab>
                 </div>
                 <span className="text-sm" style={{ color: TEXT_TERTIARY }}>
-                  {tab === "video" ? `Length ${current.duration}` : ""}
+                  {tab === "video" && current.duration && current.duration !== "N/A" ? `Length ${current.duration}` : ""}
                 </span>
               </div>
 
               {/* Player area */}
               <div className="p-5 pt-4 flex-1 flex flex-col min-h-0">
                 {tab === "video" ? (
-                  current.format === "VIDEO" && current.url ? (
+                  (current.videoUrl || (current.format === "VIDEO" && current.url)) ? (
                     <VideoPlayer
                       playing={playing}
                       onTogglePlay={() => setPlaying((p) => !p)}
                       duration={current.duration}
-                      videoUrl={current.url}
+                      videoUrl={current.videoUrl || current.url || ""}
                       isDownloaded={isDownloaded}
                       onDownload={handleDownload}
                       downloadProgress={downloadProgress}
@@ -895,9 +946,11 @@ const enrolledCourses = courses;
                         NEXT LESSON
                       </div>
                       <div className="text-sm font-semibold mb-1" style={{ color: TEXT_PRIMARY }}>{nextLesson.title}</div>
-                      <div className="flex items-center gap-1.5 text-sm" style={{ color: TEXT_TERTIARY }}>
-                        <Clock className="w-3 h-3" /> {nextLesson.duration}
-                      </div>
+                      {nextLesson.duration && nextLesson.duration !== "N/A" && (
+                        <div className="flex items-center gap-1.5 text-sm" style={{ color: TEXT_TERTIARY }}>
+                          <Clock className="w-3 h-3" /> {nextLesson.duration}
+                        </div>
+                      )}
                     </div>
                     <ArrowRight className="w-4 h-4 flex-shrink-0 mt-1" style={{ color: BLUE }} />
                   </button>
@@ -1117,12 +1170,6 @@ function VideoPlayer({ playing, onTogglePlay, duration, videoUrl, isDownloaded, 
               </span>
             )}
           </button>
-          <button
-            onClick={() => setFullscreen((v) => !v)}
-            className="absolute top-3 right-3 w-8 h-8 rounded-md bg-white/15 hover:bg-white/25 text-white flex items-center justify-center backdrop-blur-sm"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
         </>
       )}
     </div>
@@ -1131,14 +1178,14 @@ function VideoPlayer({ playing, onTogglePlay, duration, videoUrl, isDownloaded, 
   return (
     <div className="flex flex-col h-full w-full">
       {surface(false)}
-      <div className="h-14 border border-t-0 border-[#0D2543]/10 bg-[#F2F4F7] rounded-b-lg flex items-center justify-end px-4 gap-3 flex-shrink-0">
+      <div className="h-14 border border-t-0 border-[#0D2543]/10 bg-[#F2F4F7] rounded-b-lg flex items-center justify-between px-4 flex-shrink-0">
+        <span className="text-xs text-[#717182]">Tip: Use the fullscreen button in the video controls for native fullscreen</span>
         <button
-          onClick={onDownload}
-          disabled={isDownloaded || downloadProgress !== null}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-white border border-[#0D2543]/10 text-[#0D2543] hover:bg-gray-50 disabled:opacity-50"
+          onClick={() => setFullscreen(true)}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-white border border-[#0D2543]/10 text-[#0D2543] hover:bg-gray-50"
         >
-          <Download className="w-4 h-4" />
-          {downloadProgress !== null ? `Downloading ${downloadProgress}%` : isDownloaded ? "Downloaded" : "Download Video"}
+          <Maximize2 className="w-4 h-4" />
+          Fullscreen
         </button>
       </div>
       {fullscreen && createPortal(
@@ -1202,7 +1249,10 @@ function ISpringStudentViewer({ url, lessonTitle }: { url: string; lessonTitle: 
 
   return (
     <div className="flex flex-col h-full w-full">
-      <div className="flex-1 w-full rounded-lg relative bg-[#0D2543]" style={{ minHeight: 400, overflow: 'hidden' }}>
+      <div
+        className="w-full rounded-lg relative bg-[#0D2543] flex-1"
+        style={{ minHeight: 450, overflow: 'hidden' }}
+      >
         <iframe
           ref={iframeRef}
           src={proxyUrl}

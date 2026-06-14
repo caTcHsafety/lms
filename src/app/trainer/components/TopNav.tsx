@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import imgLogo from "@/imports/DefineInteractionStates-1/848d5a953dafd1fe3634da12a6906b9368a73f9e.png";
+import imgLogo from "@/assets/login/logo.png";
 import { useAuth } from "@/app/auth/AuthContext";
 import { LogOut, ChevronDown, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";

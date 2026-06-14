@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { saveToOfflineVault, addToOfflineVaultIndex } from "@/lib/offlineVault";
 import { get } from "idb-keyval";
+import { StudentAssignmentEditor } from "@/components/StudentAssignmentEditor";
 
 
 const BLUE = "#4493BF";
@@ -26,14 +27,14 @@ interface Task {
   dueLabel: string;
   instructions: string[];
   intro: string;
-  grade?: string;
-  gradeNum?: number;
   feedback?: string;
   evalStatus?: string;
   submittedAt?: string;
   fileName?: string;
   fileUrl?: string;
   files?: any[];
+  blockJson?: any[] | null;
+  answersJson?: Record<string, string> | null;
 }
 
 function formatBytes(b: number) {
@@ -42,10 +43,10 @@ function formatBytes(b: number) {
   return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Assignments() {
+export function Assignments({ initialAssignmentId }: { initialAssignmentId?: string | null }) {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>(initialAssignmentId || "");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -98,7 +99,7 @@ export function Assignments() {
         const { data: dbAssignments, error: assignError } = await supabase
           .from("assignments")
           .select(`
-            id, title, description, due_date, status, created_at,
+            id, title, description, due_date, status, created_at, block_json,
             assignment_files ( id, file_name, file_size_bytes, file_url )
           `)
           .in("id", assignmentIds.length ? assignmentIds : ['00000000-0000-0000-0000-000000000000'])
@@ -107,15 +108,14 @@ export function Assignments() {
 
         const { data: subs, error: subsError } = await supabase.from("submissions").select("*").eq("student_id", user.id);
         if (subsError) console.error("Supabase Error [submissions]:", subsError.message, subsError.details, subsError.hint);
-        
-        const localSubsCached = localStorage.getItem(`student_submissions_${user.id}`);
-        const localSubs = localSubsCached ? JSON.parse(localSubsCached) : {};
 
         const newTasks: Task[] = (dbAssignments || []).map((a: any) => {
-          const sub = subs?.find((s) => s.assignment_id === a.id || s.module_id === a.id) || localSubs[a.id];
+          const sub = subs?.find((s) => s.assignment_id === a.id || s.module_id === a.id);
           const dueDate = a.due_date ? new Date(a.due_date) : null;
           const now = new Date();
-          const overdue = dueDate ? (now > dueDate && !sub) : false;
+          // Only mark as completed if approved or pending review (not draft, not needs_revision)
+          const isSubmitted = sub && sub.status && sub.status !== "draft" && sub.status !== "needs_revision";
+          const overdue = dueDate ? (now > dueDate && !isSubmitted) : false;
 
           return {
             id: a.id,
@@ -123,27 +123,29 @@ export function Assignments() {
             desc: a.description || "No description provided.",
             date: a.due_date ? new Date(a.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No due date",
             module: "Assignment",
-            status: sub ? "completed" : (overdue ? "overdue" : "pending"),
+            status: isSubmitted ? "completed" : (overdue ? "overdue" : "pending"),
             points: 100,
             moduleName: "General",
             dueLabel: a.due_date ? new Date(a.due_date).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "No due date",
             instructions: ["Review the attached files.", "Complete the required work.", "Submit your final deliverables."],
             intro: a.description || "No description provided.",
-            grade: sub?.grade ? `${sub.grade}/100` : (sub ? "Pending" : undefined),
-            gradeNum: sub?.grade,
             feedback: sub?.feedback,
             evalStatus: sub?.status,
-            submittedAt: sub?.submitted_at ? new Date(sub.submitted_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : (sub?.submittedAt || undefined),
-            fileName: sub?.file_name || sub?.fileName || (sub?.file_url ? sub.file_url.split('/').pop() : undefined),
+            submittedAt: isSubmitted && sub?.submitted_at ? new Date(sub.submitted_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : undefined,
+            fileName: sub?.file_name || (sub?.file_url ? sub.file_url.split('/').pop() : undefined),
             fileUrl: sub?.file_url || undefined,
-            files: a.assignment_files || []
+            files: a.assignment_files || [],
+            blockJson: a.block_json || null,
+            answersJson: sub?.answers_json || null,
           };
         });
 
         if (!isMounted) return;
-        localStorage.setItem(`student_assignments_${user.id}`, JSON.stringify(newTasks));
         setTasks(newTasks);
-        if (newTasks.length > 0) setSelectedId(newTasks[0].id);
+        if (newTasks.length > 0 && !selectedId) {
+          const initial = initialAssignmentId && newTasks.find(t => t.id === initialAssignmentId);
+          setSelectedId(initial ? initial.id : newTasks[0].id);
+        }
       } catch (err) {
         console.error("Error loading student assignments:", err);
       } finally {
@@ -181,14 +183,13 @@ export function Assignments() {
         .eq('assignment_id', selectedId)
         .maybeSingle();
 
-      if (data) {
+      // Only mark as completed if approved or pending (not draft, not needs_revision)
+      if (data && data.status && data.status !== 'draft' && data.status !== 'needs_revision') {
         setTasks(ts => ts.map(t => t.id === selectedId ? {
           ...t,
           status: "completed",
-          submittedAt: data.submitted_at ? new Date(data.submitted_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : new Date().toLocaleString(),
+          submittedAt: data.submitted_at ? new Date(data.submitted_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : undefined,
           fileName: data.file_name || (data.file_url ? data.file_url.split('/').pop() : "Submission"),
-          grade: data.grade ? `${data.grade}/100` : "Pending",
-          gradeNum: data.grade,
           feedback: data.feedback,
           evalStatus: data.status,
           fileUrl: data.file_url
@@ -238,7 +239,6 @@ export function Assignments() {
           status: "completed",
           submittedAt: new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }),
           fileName: selectedFile.name,
-          grade: "Pending"
         } : t));
       } else {
         console.error("Submission insert error:", insertError);
@@ -331,7 +331,10 @@ export function Assignments() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6 grid gap-5" style={{ gridTemplateColumns: sidebarOpen ? "320px 1fr" : "1fr" }}>
+    <div
+      className="w-full max-w-[1500px] flex-1 min-h-full mx-auto px-6 lg:px-8 py-6 grid items-stretch gap-6"
+      style={{ gridTemplateColumns: sidebarOpen ? "360px minmax(0, 1fr)" : "1fr" }}
+    >
       {sidebarOpen && (
         <aside className="space-y-5">
           <section>
@@ -363,7 +366,7 @@ export function Assignments() {
         </aside>
       )}
 
-      <main className="relative bg-white rounded-2xl p-7 shadow-sm border border-gray-100">
+      <main className="relative bg-white rounded-2xl p-7 shadow-sm border border-gray-100 min-w-0 h-full">
         <button
           onClick={() => setSidebarOpen((v) => !v)}
           className="absolute -left-3 top-8 w-6 h-12 bg-white border border-gray-200 rounded-r-lg flex items-center justify-center text-gray-400 hover:text-[#0D2543] z-10"
@@ -380,7 +383,7 @@ export function Assignments() {
           )}
           {selected.status === "completed" && (
             <span className="flex items-center gap-1.5 bg-green-50 text-green-600 text-xs px-3 py-1.5 rounded-full">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {selected.grade === "Pending" ? "Submitted" : "Graded"}
+              <CheckCircle2 className="w-3.5 h-3.5" /> {selected.evalStatus === "approved" ? "Reviewed" : "Submitted"}
             </span>
           )}
         </div>
@@ -388,7 +391,6 @@ export function Assignments() {
         <div className="flex flex-wrap gap-6 text-sm text-gray-500 mb-6">
           <span className="flex items-center gap-1.5"><Folder className="w-4 h-4" /> {selected.moduleName}</span>
           <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /> Due: {selected.dueLabel}</span>
-          <span className="flex items-center gap-1.5"><Trophy className="w-4 h-4" /> Points: {selected.points}</span>
         </div>
 
         <h2 className="text-sm font-semibold mb-3" style={{ color: NAVY }}>Instructions</h2>
@@ -505,59 +507,69 @@ export function Assignments() {
           </div>
         )}
 
-        <div className="rounded-lg p-4 mb-6 border" style={{ backgroundColor: "#f0f6fa", borderColor: "#cfe3ef" }}>
-          <div className="flex items-center gap-2 text-sm font-medium mb-1" style={{ color: BLUE }}>
-            <Info className="w-4 h-4" /> Note
-          </div>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Submissions must be in PDF or DOCX format. Make sure to adhere to the IEEE citation format for any external references used.
-          </p>
-        </div>
-
         <div className="border-t border-gray-100 pt-6">
           <h2 className="text-sm font-semibold mb-4" style={{ color: NAVY }}>Your Submission</h2>
 
-          {selected.status !== "completed" && <UploadBox selectedFile={selectedFile} setSelectedFile={setSelectedFile} isUploading={isUploading} onConfirm={handleConfirmSubmit} />}
-
-          {selected.status === "completed" && (
+          {/* DOCX Block Editor for assignments with block_json */}
+          {selected.blockJson && selected.blockJson.length > 0 ? (
+            <div className="rounded-xl border border-[#e2e2e4] overflow-hidden">
+              <StudentAssignmentEditor
+                key={selected.id}
+                assignmentId={selected.id}
+                studentId={user?.id || ""}
+                studentName={(user?.user_metadata?.full_name as string) || user?.email || "Student"}
+                title={selected.title}
+                blocks={selected.blockJson}
+                onBack={() => {}}
+                onSubmitted={() => {
+                  setTasks(ts => ts.map(t => t.id === selected.id ? {
+                    ...t,
+                    status: "completed",
+                    submittedAt: new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }),
+                    evalStatus: "pending",
+                  } : t));
+                }}
+              />
+            </div>
+          ) : (
             <>
-              <div className="bg-green-50/40 rounded-lg p-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-green-500" />
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: NAVY }}>Submitted successfully</div>
-                    <div className="text-sm text-gray-500">Completed on {selected.submittedAt}</div>
+              {selected.status !== "completed" && <UploadBox selectedFile={selectedFile} setSelectedFile={setSelectedFile} isUploading={isUploading} onConfirm={handleConfirmSubmit} />}
+
+              {selected.status === "completed" && (
+                <>
+                  <div className="bg-green-50/40 rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-green-500" />
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: NAVY }}>Submitted successfully</div>
+                        <div className="text-sm text-gray-500">Completed on {selected.submittedAt}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between border border-gray-100 rounded-lg p-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-md bg-red-50 flex items-center justify-center text-red-500 text-sm font-semibold">PDF</div>
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: NAVY }}>{selected.fileName}</div>
-                    <div className="text-sm text-gray-400">4.2 MB</div>
-                  </div>
-                </div>
-                <button onClick={handleDownload} className="text-gray-400 hover:text-[#0D2543] p-2 rounded hover:bg-gray-50">
-                  <Download className="w-4 h-4" />
-                </button>
-              </div>
-              {(selected.evalStatus === 'approved' || selected.evalStatus === 'needs_revision' || selected.evalStatus === 'graded') ? (
-                <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2 text-blue-800 font-medium">
-                    <MessageSquare className="w-4 h-4" />
-                    Instructor Feedback
-                  </div>
-                  <p className="text-sm text-blue-900 mb-2 leading-relaxed">
-                    {selected.feedback || "Your instructor has reviewed your submission but did not leave written feedback."}
-                  </p>
-                  {selected.gradeNum != null && (
-                    <div className="text-sm font-bold text-blue-900 mt-2">
-                      Grade: {selected.gradeNum}/100
+                  {selected.fileUrl && (
+                    <div className="flex items-center justify-between border border-gray-100 rounded-lg p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-md bg-red-50 flex items-center justify-center text-red-500 text-sm font-semibold">PDF</div>
+                        <div>
+                          <div className="text-sm font-medium" style={{ color: NAVY }}>{selected.fileName}</div>
+                          <div className="text-sm text-gray-400">4.2 MB</div>
+                        </div>
+                      </div>
                     </div>
                   )}
-                </div>
-              ) : null}
+                  {(selected.evalStatus === 'approved' || selected.evalStatus === 'needs_revision') && (
+                    <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2 text-blue-800 font-medium">
+                        <MessageSquare className="w-4 h-4" />
+                        Instructor Feedback
+                      </div>
+                      <p className="text-sm text-blue-900 mb-2 leading-relaxed">
+                        {selected.feedback || "Your instructor has reviewed your submission but did not leave written feedback."}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </>
           )}
         </div>
@@ -584,7 +596,6 @@ function TaskCard({ task, active, onClick }: { task: Task; active: boolean; onCl
         {done ? (
           <>
             <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Submitted: {task.submittedAt?.split(" at")[0] || task.date}</span>
-            {task.grade && task.grade !== "Pending" && <span className="flex items-center gap-1"><Trophy className="w-3 h-3" /> Grade: {task.grade}</span>}
           </>
         ) : (
           <>

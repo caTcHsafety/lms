@@ -1,6 +1,7 @@
-import { useMemo, useState, useRef } from "react";
+import { useState, useRef } from "react";
 import { ArrowLeft, FileText, Download, AlertCircle, CheckCircle2, RotateCcw, Maximize } from "lucide-react";
 import type { Submission } from "./mentor-data";
+import { DocxBlockEditor } from "@/components/DocxBlockEditor";
 
 const fileBadge: Record<Submission["fileType"], { label: string; bg: string; fg: string }> = {
   pdf: { label: "PDF", bg: "bg-rose-50", fg: "text-rose-700" },
@@ -17,35 +18,20 @@ export function EvalWorkspace({
   onBack: () => void;
   onSubmit: (id: string, outcome: "approved" | "needs-revision", grade: number, feedback: string) => void;
 }) {
-  const [grade, setGrade] = useState<number | "">("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
 
-  const gradeNum = typeof grade === "number" ? grade : Number(grade);
-  const validGrade = grade !== "" && gradeNum >= 0 && gradeNum <= 100;
   const feedbackOk = feedback.trim().length >= 5;
-  const canSubmit = validGrade && feedbackOk;
-
-  const gradeBand = useMemo(() => {
-    if (!validGrade) return null;
-    if (gradeNum >= 85) return { label: "Distinction", fg: "text-emerald-700", bg: "bg-emerald-50" };
-    if (gradeNum >= 70) return { label: "Strong pass", fg: "text-emerald-700", bg: "bg-emerald-50" };
-    if (gradeNum >= 50) return { label: "Pass", fg: "text-amber-700", bg: "bg-amber-50" };
-    return { label: "Below threshold", fg: "text-rose-700", bg: "bg-rose-50" };
-  }, [gradeNum, validGrade]);
+  const canSubmit = feedbackOk;
 
   const handleSubmit = (outcome: "approved" | "needs-revision") => {
     if (!canSubmit) {
-      setError(
-        !validGrade
-          ? "Enter a grade between 0 and 100 before submitting."
-          : "Write at least 20 characters of qualitative feedback before submitting."
-      );
+      setError("Write at least 5 characters of feedback before submitting.");
       return;
     }
     setError(null);
-    onSubmit(submission.id, outcome, gradeNum, feedback.trim());
+    onSubmit(submission.id, outcome, 0, feedback.trim());
   };
 
   const toggleFullScreen = () => {
@@ -58,7 +44,7 @@ export function EvalWorkspace({
     }
   };
 
-  const fb = fileBadge[submission.fileType];
+  const fb = fileBadge[submission.fileType] || { label: "File", bg: "bg-gray-50", fg: "text-gray-700" };
 
   return (
     <div>
@@ -94,6 +80,16 @@ export function EvalWorkspace({
               </div>
             </div>
             <div className="bg-[#f7f8fa] p-6">
+              {submission.blockJson && submission.answersJson ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-6 max-h-[700px] overflow-auto">
+                  <DocxBlockEditor
+                    blocks={submission.blockJson}
+                    answers={submission.answersJson}
+                    readOnly={true}
+                    mode="mentor"
+                  />
+                </div>
+              ) : (
               <div ref={viewerRef} className="relative w-full bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
                 <iframe 
                   src={submission.content} 
@@ -112,55 +108,16 @@ export function EvalWorkspace({
                   </button>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </section>
 
         <aside className="col-span-12 lg:col-span-5 space-y-4">
           <div className="rounded-2xl bg-white border border-[#e5e7ec] p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="text-[#0c3455]">Grade</div>
-                <div className="text-sm text-[#717182]">Single score out of 100</div>
-              </div>
-              {gradeBand && (
-                <span className={`px-2.5 h-6 inline-flex items-center rounded-full text-[16px] ${gradeBand.bg} ${gradeBand.fg}`}>
-                  {gradeBand.label}
-                </span>
-              )}
-            </div>
-            <div className="flex items-end gap-3">
-              <div className="relative w-32">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={grade}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "") setGrade("");
-                    else setGrade(Math.max(0, Math.min(100, Number(v))));
-                  }}
-                  placeholder="—"
-                  className="h-14 w-full pr-12 pl-4 rounded-xl bg-[#fafbfc] border border-[#e5e7ec] text-2xl text-[#0c3455] outline-none focus:border-[#0c3455]/40"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#717182]">/100</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={typeof grade === "number" ? grade : 0}
-                onChange={(e) => setGrade(Number(e.target.value))}
-                className="flex-1 accent-[#0c3455]"
-              />
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white border border-[#e5e7ec] p-5">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <div className="text-[#0c3455]">Qualitative feedback</div>
+                <div className="text-[#0c3455]">Feedback</div>
                 <div className="text-sm text-[#717182]">Visible to the student with your decision</div>
               </div>
               <div className={`text-[16px] ${feedbackOk ? "text-emerald-700" : "text-[#717182]"}`}>

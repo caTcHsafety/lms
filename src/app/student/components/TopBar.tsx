@@ -2,7 +2,7 @@ import { Bell, HelpCircle, Mail, Phone, CheckCircle2, AlertTriangle, BookOpen, P
 import { useEffect, useRef, useState } from "react";
 import { ImageWithFallback } from "@/components/figma/ImageWithFallback";
 import { ProfileEditor } from "@/components/ProfileEditor";
-import logo from "@/imports/image.png";
+import logo from "@/assets/login/logo.png";
 import { useAuth } from "@/app/auth/AuthContext";
 import { supabase } from "@/lib/supabase";
 
@@ -97,23 +97,23 @@ export function TopBar({ view, onChange }: TopBarProps) {
 
         const { data: gradedSubs, error: gsError } = await supabase
           .from('submissions')
-          .select('id, grade, submitted_at, status')
+          .select('id, feedback, submitted_at, status')
           .eq('student_id', user.id)
           .neq('status', 'pending')
+          .neq('status', 'draft')
           .order('submitted_at', { ascending: false })
           .limit(5);
         if (gsError) console.error("Supabase Error [submissions grades]:", gsError.message, gsError.details, gsError.hint);
 
         if (gradedSubs) {
           gradedSubs.forEach((s: any) => {
-            const assignTitle = 'Assignment';
             const nId = `sub_${s.id}`;
             if (!readIds.includes(nId)) {
               newNotifs.push({
                 id: nId,
                 icon: <CheckCircle2 className="w-4 h-4 text-green-500" />,
-                title: `${assignTitle} graded`,
-                desc: `You scored ${s.grade || 0}/100`,
+                title: s.status === 'approved' ? 'Assignment approved' : 'Assignment reviewed',
+                desc: s.feedback ? s.feedback.slice(0, 50) : "Your instructor has reviewed your work",
                 time: new Date(s.submitted_at).toLocaleDateString(),
                 unread: true
               });

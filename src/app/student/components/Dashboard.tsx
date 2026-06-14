@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Flame, ListChecks, TrendingUp, Shield, Network, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Flame, ListChecks, TrendingUp, ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
 import type { View } from "./TopBar";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/auth/AuthContext";
@@ -9,15 +9,17 @@ const NAVY = "#0D2543";
 
 interface DashboardProps {
   onNavigate: (v: View) => void;
+  onNavigateToCourse: (courseId: string, lessonId?: string) => void;
+  onNavigateToAssignment?: (assignmentId: string) => void;
 }
 
-export function Dashboard({ onNavigate }: DashboardProps) {
+export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignment }: DashboardProps) {
   const { user } = useAuth();
   const [activity, setActivity] = useState<number[]>(Array(364).fill(0));
   const [streak, setStreak] = useState(0);
   const [pendingAssignments, setPendingAssignments] = useState<{ id: string; title: string; dueLabel: string; overdue: boolean }[]>([]);
-  const [courses, setCourses] = useState<{ id: string; title: string; progress: number }[]>([]);
-  const [recentScores, setRecentScores] = useState<{ id: string; title: string; score: number }[]>([]);
+  const [courses, setCourses] = useState<{ id: string; title: string; moduleId: string; moduleTitle: string; progress: number }[]>([]);
+  const [recentFeedback, setRecentFeedback] = useState<{ id: string; assignmentId: string; title: string; feedback: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState<string>("");
 
@@ -189,7 +191,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         const unlockedMods = cm || [];
         const unlockedModIds = new Set(unlockedMods.map((c) => c.module_id));
 
-        const { data: dbCourses } = await supabase.from("courses").select("id, title, modules(id, title)").eq("is_active", true);
+        const { data: dbCourses } = await supabase.from("courses").select("id, title, modules(id, title, order_index)").eq("is_active", true);
         const { data: prog } = await supabase.from("student_progress").select("module_id, completed").eq("student_id", user.id).eq("completed", true);
         const completedModIds = new Set(prog?.map((p) => p.module_id) || []);
 
@@ -197,14 +199,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         dbCourses?.forEach((c: any) => {
           let doneMods = 0;
           let totalMods = 0;
-          c.modules?.forEach((m: any) => {
+          let firstUnlockedModuleId = "";
+          let firstUnlockedModuleTitle = "Course Content";
+          const orderedModules = [...(c.modules || [])].sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+          orderedModules.forEach((m: any) => {
             if (unlockedModIds.has(m.id)) {
               totalMods++;
+              if (totalMods === 1) {
+                firstUnlockedModuleId = m.id;
+                firstUnlockedModuleTitle = m.title || "Course Content";
+              }
               if (completedModIds.has(m.id)) doneMods++;
             }
           });
           if (totalMods > 0) {
-            courseList.push({ id: c.id, title: c.title, progress: Math.round((doneMods / totalMods) * 100) });
+            courseList.push({
+              id: c.id,
+              title: c.title,
+              moduleId: firstUnlockedModuleId,
+              moduleTitle: firstUnlockedModuleTitle,
+              progress: Math.round((doneMods / totalMods) * 100),
+            });
           }
         });
 
@@ -253,23 +268,31 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           }
         });
 
-        // 6. Submissions with scores
-        const { data: gradedSubs } = await supabase.from("submissions").select("id, grade, module_id").eq("student_id", user.id).not("grade", "is", null);
-        const scores = gradedSubs?.map((s) => {
-          let mTitle = "Module Assessment";
-          dbCourses?.forEach((c: any) => {
-            const m = c.modules?.find((mod: any) => mod.id === s.module_id);
-            if (m) mTitle = m.title;
-          });
-          return { id: s.id, title: mTitle, score: s.grade || 0 };
-        }) || [];
+        // 6. Recent feedback from mentors
+        const { data: feedbackSubs } = await supabase
+          .from("submissions")
+          .select("id, feedback, status, assignment_id, assignments(title)")
+          .eq("student_id", user.id)
+          .not("feedback", "is", null)
+          .order("reviewed_at", { ascending: false })
+          .limit(3);
+        const feedbackList = (feedbackSubs || []).map((s: any) => {
+          const assignment = Array.isArray(s.assignments) ? s.assignments[0] : s.assignments;
+          return {
+            id: s.id,
+            assignmentId: s.assignment_id,
+            title: assignment?.title || "Assignment",
+            feedback: s.feedback || "",
+            status: s.status || "approved",
+          };
+        });
 
         if (!isMounted) return;
         setStreak(calculatedStreak);
         setActivity(newAct);
         setCourses(courseList.slice(0, 2));
-        setPendingAssignments(pending.slice(0, 3)); // show top 3
-        setRecentScores(scores.slice(0, 2)); // show top 2
+        setPendingAssignments(pending.slice(0, 3));
+        setRecentFeedback(feedbackList.slice(0, 3));
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
       } finally {
@@ -355,22 +378,33 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <div className="grid grid-cols-2 gap-3 flex-1">
               {courses.length === 0 && <div className="text-sm text-gray-400 col-span-2 flex items-center justify-center h-full">No active courses</div>}
               {courses.map((c) => (
-                <CourseCard key={c.id} icon={<Shield className="w-7 h-7 text-gray-400" />} title={c.title} progress={c.progress} onClick={() => onNavigate("courses")} />
+                <CourseCard
+                  key={c.id}
+                  title={c.title}
+                  coverTitle={c.moduleTitle}
+                  progress={c.progress}
+                  onClick={() => onNavigateToCourse(c.id, c.moduleId)}
+                />
               ))}
             </div>
           </div>
 
           <div className="md:border-l md:pl-6 border-gray-100 flex flex-col">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Recent Scores</h3>
-              <TrendingUp className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Recent Feedbacks</h3>
+              <MessageSquare className="w-4 h-4 text-gray-400" />
             </div>
-            {recentScores.length === 0 && <div className="text-sm text-gray-400 flex-1 flex items-center justify-center">No scores yet</div>}
-            <div className="flex-1 flex flex-col justify-center gap-6">
-              {recentScores.map((s) => (
-                <div key={s.id} className="w-full">
-                  <ScoreBar label={s.title} value={s.score} />
-                </div>
+            {recentFeedback.length === 0 && <div className="text-sm text-gray-400 flex-1 flex items-center justify-center">No feedback yet</div>}
+            <div className="flex-1 flex flex-col justify-center gap-4">
+              {recentFeedback.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => onNavigateToAssignment?.(f.assignmentId)}
+                  className="w-full text-left border-l-[3px] border-l-[#4493BF] pl-4 py-1 hover:bg-gray-50 rounded-r-md transition-colors"
+                >
+                  <div className="text-sm font-semibold" style={{ color: NAVY }}>{f.title}</div>
+                  <p className="text-sm text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{f.feedback}</p>
+                </button>
               ))}
             </div>
           </div>
@@ -410,10 +444,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   );
 }
 
-function CourseCard({ icon, title, progress, onClick }: { icon: React.ReactNode; title: string; progress: number; onClick: () => void }) {
+function CourseCard({ title, coverTitle, progress, onClick }: { title: string; coverTitle: string; progress: number; onClick: () => void }) {
   return (
     <button onClick={onClick} className="text-left group flex flex-col h-full w-full">
-      <div className="bg-gray-100 group-hover:bg-gray-200 transition-colors rounded-lg flex-1 flex items-center justify-center w-full mb-3 min-h-[100px]">{icon}</div>
+      <div
+        className="relative overflow-hidden rounded-lg flex-1 flex items-center justify-center w-full mb-3 min-h-[100px] px-5 text-center transition-transform group-hover:scale-[1.01]"
+        style={{
+          background: "linear-gradient(135deg, #0D2543 0%, #24678f 50%, #4493BF 100%)",
+        }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(255,255,255,0.16),transparent_32%)]" />
+        <div className="relative text-white text-lg font-bold leading-tight drop-shadow-sm">{coverTitle}</div>
+      </div>
       <div className="text-sm font-medium mb-2 leading-snug w-full" style={{ color: NAVY }}>{title}</div>
       <div className="flex items-center gap-2 w-full mt-auto">
         <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">

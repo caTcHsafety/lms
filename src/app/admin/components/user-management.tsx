@@ -355,12 +355,13 @@ export function UserManagementRedesigned() {
   const [studentOpen, setStudentOpen] = useState(false);
   const [sName, setSName] = useState("");
   const [sEmail, setSEmail] = useState("");
+  const [sDob, setSDob] = useState("");
   const [sCohorts, setSCohorts] = useState<string[]>([]);
   const [sCred, setSCred] = useState<{ name: string; email: string; cohorts: string[]; password: string } | null>(null);
   const [sCopied, setSCopied] = useState(false);
   const sValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sEmail);
   const sCanSubmit = sName.trim().length > 0 && sValidEmail && sCohorts.length > 0;
-  const openAddStudent = () => { setSName(""); setSEmail(""); setSCohorts([]); setStudentOpen(true); };
+  const openAddStudent = () => { setSName(""); setSEmail(""); setSDob(""); setSCohorts([]); setStudentOpen(true); };
   const toggleSCohort = (c: string) =>
     setSCohorts((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
   const submitStudent = async () => {
@@ -400,6 +401,7 @@ export function UserManagementRedesigned() {
         role: "student",
         temp_password: password,
         must_reset_pw: true,
+        ...(sDob ? { date_of_birth: sDob } : {}),
       });
 
       if (profileError) throw profileError;
@@ -1089,6 +1091,15 @@ export function UserManagementRedesigned() {
                 {sEmail.length > 0 && !sValidEmail && (
                   <p className="mt-1 font-['Inter'] text-[11px] text-[#9F2A1C]">Enter a valid email address.</p>
                 )}
+              </div>
+              <div>
+                <label className="font-['Inter'] font-semibold text-[11px] uppercase tracking-[0.5px] text-[#74777E] block mb-1.5">Date of Birth</label>
+                <input
+                  type="date"
+                  value={sDob}
+                  onChange={(e) => setSDob(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-[rgba(13,37,67,0.15)] rounded-md font-['Inter'] text-[13px] text-[#0d2543] focus:outline-none focus:border-[#00658d] focus:ring-2 focus:ring-[rgba(0,101,141,0.15)] transition-all duration-150"
+                />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">

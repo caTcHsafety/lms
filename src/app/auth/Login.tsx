@@ -43,11 +43,16 @@ export default function Login() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("role, must_reset_pw")
+        .select("role, must_reset_pw, is_active")
         .eq("id", data.user.id)
         .single();
 
       if (profileError) throw profileError;
+
+      if (profileData.is_active === false) {
+        await supabase.auth.signOut();
+        throw new Error("Your account has been deactivated. Please contact your administrator.");
+      }
 
       if (profileData.must_reset_pw) {
         navigate("/update-password");

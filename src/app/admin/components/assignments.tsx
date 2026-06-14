@@ -15,6 +15,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { DocxAssignmentUploader } from "@/components/DocxAssignmentUploader";
+import type { DocBlock } from "@/lib/docxParser";
 
 type Cohort = {
   id: string;
@@ -79,6 +81,10 @@ export function AssignmentsView() {
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [cohortMenuOpen, setCohortMenuOpen] = useState(false);
+
+  // DOCX block editor state
+  const [draftBlockJson, setDraftBlockJson] = useState<any[] | null>(null);
+  const [draftDocxFile, setDraftDocxFile] = useState<File | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -170,11 +176,36 @@ export function AssignmentsView() {
     setDraftDue("");
     setDraftCohorts([]);
     setDraftFiles([]);
+    setDraftBlockJson(null);
+    setDraftDocxFile(null);
     setUploadOpen(true);
   };
 
   const addFiles = (files: FileList | File[]) => {
     setDraftFiles((prev) => [...prev, ...Array.from(files)]);
+  };
+
+  const handleUnifiedUpload = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      if (file.name.endsWith(".docx")) {
+        // Auto-detect DOCX → parse for block editor
+        try {
+          const { parseDocxToBlocks } = await import("@/lib/docxParser");
+          const blocks = await parseDocxToBlocks(file);
+          setDraftBlockJson(blocks);
+          setDraftDocxFile(file);
+          // Also add to files list for storage
+          setDraftFiles((prev) => [...prev, file]);
+        } catch (err) {
+          console.error("DOCX parse failed:", err);
+          // Fallback: just add as regular file
+          setDraftFiles((prev) => [...prev, file]);
+        }
+      } else {
+        setDraftFiles((prev) => [...prev, file]);
+      }
+    }
   };
 
   const removeFile = (idx: number) => setDraftFiles((prev) => prev.filter((_, i) => i !== idx));
@@ -191,6 +222,15 @@ export function AssignmentsView() {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
 
+      // Upload DOCX binary to storage if present
+      let docxStoragePath: string | null = null;
+      if (draftDocxFile) {
+        const docxName = `assignments-docx/${Date.now()}_${Math.random().toString(36).substring(7)}.docx`;
+        const { error: docxErr } = await supabase.storage.from("module_content").upload(docxName, draftDocxFile);
+        if (docxErr) throw docxErr;
+        docxStoragePath = docxName;
+      }
+
       // 1. Insert assignment
       const { data: newAssign, error: aErr } = await supabase.from("assignments").insert({
         title: draftTitle.trim(),
@@ -198,6 +238,8 @@ export function AssignmentsView() {
         due_date: draftDue ? draftDue : null,
         status: status,
         created_by: userId,
+        block_json: draftBlockJson || null,
+        docx_storage_path: docxStoragePath,
       }).select().single();
       
       if (aErr) throw aErr;
@@ -242,17 +284,21 @@ export function AssignmentsView() {
   };
 
   const removeAssignment = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this assignment?")) return;
+    if (!confirm("Are you sure you want to delete this assignment? All student submissions will also be deleted.")) return;
     try {
-      // Deleting the assignment will cascade delete assignment_cohorts and assignment_files
-      // Note: Actual storage files might be left orphaned unless a trigger cleans them, but DB row will be gone
+      // Delete submissions first (FK constraint)
+      await supabase.from("submissions").delete().eq("assignment_id", id);
+      // Delete assignment_cohorts and assignment_files cascade, but explicit for safety
+      await supabase.from("assignment_files").delete().eq("assignment_id", id);
+      await supabase.from("assignment_cohorts").delete().eq("assignment_id", id);
+      // Now delete the assignment
       const { error } = await supabase.from("assignments").delete().eq("id", id);
       if (error) throw error;
       setAssignments((prev) => prev.filter((a) => a.id !== id));
       if (selectedId === id) setSelectedId(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to delete assignment:", err);
-      alert("Failed to delete assignment");
+      alert("Failed to delete assignment: " + (err.message || "Unknown error"));
     }
   };
 
@@ -753,6 +799,13 @@ export function AssignmentsView() {
               {/* File drop zone */}
               <div>
                 <label className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#74777E] block mb-1.5">Attach Files</label>
+                {/* Unified file upload — auto-detects DOCX for interactive parsing */}
+                <div className="font-['Inter'] font-semibold text-[11px] uppercase tracking-[0.5px] text-[#74777E] mb-2">
+                  Attachments
+                </div>
+                <p className="font-['Inter'] text-xs text-[#74777E] mb-2">
+                  Upload files. If you upload a .docx with [ANSWER] or ____ placeholders, students will answer inline in-app.
+                </p>
                 <label
                   onDragOver={(e) => {
                     e.preventDefault();
@@ -762,7 +815,7 @@ export function AssignmentsView() {
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragOver(false);
-                    if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
+                    if (e.dataTransfer.files?.length) handleUnifiedUpload(e.dataTransfer.files);
                   }}
                   className={`block cursor-pointer rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors duration-150 ${
                     dragOver
@@ -774,16 +827,25 @@ export function AssignmentsView() {
                     type="file"
                     multiple
                     className="hidden"
-                    onChange={(e) => e.target.files && addFiles(e.target.files)}
+                    onChange={(e) => e.target.files && handleUnifiedUpload(e.target.files)}
                   />
                   <Upload className="size-5 text-[#00658d] mx-auto mb-1" />
                   <div className="font-['Inter'] font-semibold text-sm text-[#0d2543]">
                     Drag & drop or click to upload
                   </div>
                   <div className="font-['Inter'] text-sm text-[#74777E] mt-0.5">
-                    PDF, DOCX, PPTX, video, etc.
+                    DOCX (interactive), PDF, PPTX, video, etc.
                   </div>
                 </label>
+
+                {draftBlockJson && (
+                  <div className="mt-2 flex items-center gap-2 p-2.5 rounded-lg bg-[#e6f4ea] border border-[#1e7e34]/20">
+                    <CheckCircle2 className="size-4 text-[#1e7e34]" />
+                    <span className="font-['Inter'] text-xs text-[#1e7e34]">
+                      DOCX parsed — {draftBlockJson.filter((b: any) => b.type === "answer_zone").length} answer zone(s) detected. Students will fill inline.
+                    </span>
+                  </div>
+                )}
 
                 {draftFiles.length > 0 && (
                   <ul className="mt-2 space-y-1.5">

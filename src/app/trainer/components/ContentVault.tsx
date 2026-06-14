@@ -498,9 +498,11 @@ function VideoCard({ video, onPlay }: { video: Video; onPlay: () => void }) {
         <div className="relative size-14 rounded-full bg-white/15 border border-white/30 backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition-transform">
           <PlayCircle size={28} className="text-white" />
         </div>
-        <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/55 text-white text-sm tabular-nums">
-          {video.durationMin}:00
-        </div>
+        {video.durationMin > 0 && (
+          <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/55 text-white text-sm tabular-nums">
+            {video.durationMin} min
+          </div>
+        )}
       </button>
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">

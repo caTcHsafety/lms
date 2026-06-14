@@ -135,11 +135,13 @@ export default function App() {
       .select(`
         id,
         student_id,
+        assignment_id,
         submitted_at,
         status,
         file_url,
+        answers_json,
         profiles!submissions_student_id_fkey (id, full_name),
-        assignments (title)
+        assignments (title, block_json)
       `);
     if (studentFilter) {
       subsQuery = subsQuery.in('student_id', studentFilter);
@@ -172,7 +174,10 @@ export default function App() {
           status: mappedStatus,
           fileType: "pdf",
           fileName: s.file_url?.split('/').pop() || "submission.pdf",
-          content: s.file_url || "No content available."
+          content: s.file_url || "No content available.",
+          assignmentId: s.assignment_id,
+          answersJson: s.answers_json || null,
+          blockJson: (assignment as any)?.block_json || null,
         };
       });
       setSubmissions(liveSubs);
@@ -336,28 +341,59 @@ export default function App() {
     feedback: string
   ) => {
     const dbOutcome = outcome === "needs-revision" ? "needs_revision" : "approved";
-    const { error } = await supabase
-      .from('submissions')
-      .update({
-        status: dbOutcome,
-        grade,
-        feedback,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user?.id
-      })
-      .eq('id', id);
 
-    if (error) {
-      toast.error("Failed to submit evaluation");
-      return;
+    // Find the submission to check if PDF exists
+    const submission = submissions.find(s => s.id === id);
+
+    try {
+      // If submission has block_json + answers but no file (PDF was missed during submit), generate it now
+      if (submission?.blockJson && submission?.answersJson && !submission?.content?.includes('/api/submission/')) {
+        try {
+          const { generateSubmissionPdf } = await import("@/lib/submissionPdf");
+          const pdfBlob = generateSubmissionPdf(
+            submission.assignment,
+            submission.studentName,
+            submission.blockJson,
+            submission.answersJson
+          );
+          const pdfPath = `${submission.studentId}/${submission.assignmentId || id}_${Date.now()}_submission.pdf`;
+          const { error: uploadErr } = await supabase.storage
+            .from("student_submissions")
+            .upload(pdfPath, pdfBlob, { upsert: true, contentType: "application/pdf" });
+          if (!uploadErr) {
+            const fileUrl = `${window.location.origin}/api/submission/${submission.assignmentId || id}`;
+            await supabase
+              .from("submissions")
+              .update({ storage_path: pdfPath, file_url: fileUrl })
+              .eq("id", id);
+          }
+        } catch (pdfErr) {
+          console.error("[Mentor Eval] PDF generation failed:", pdfErr);
+        }
+      }
+
+      // Now update the evaluation status
+      const { error } = await supabase
+        .from('submissions')
+        .update({
+          status: dbOutcome,
+          feedback,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: user?.id
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast.success(
+        outcome === "approved" ? "Approved" : "Returned for revision",
+        { description: feedback.length > 80 ? feedback.slice(0, 80) + "…" : feedback }
+      );
+      setScreen({ name: "queue" });
+      fetchData();
+    } catch (err: any) {
+      toast.error("Failed to submit evaluation: " + (err.message || ""));
     }
-
-    toast.success(
-      outcome === "approved" ? `Approved · ${grade}/100` : `Returned for revision · ${grade}/100`,
-      { description: feedback.length > 80 ? feedback.slice(0, 80) + "…" : feedback }
-    );
-    setScreen({ name: "queue" });
-    fetchData();
   };
 
   const activeStudent =

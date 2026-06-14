@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { LayoutDashboard, Users, Inbox, LogOut, ChevronDown, Pencil } from "lucide-react";
-import logo from "@/imports/image.png";
+import logo from "@/assets/login/logo.png";
 import { useAuth } from "@/app/auth/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { ProfileEditor } from "@/components/ProfileEditor";

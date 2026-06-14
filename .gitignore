@@ -8,6 +8,7 @@ dist/
 .env
 .env.local
 .env.*.local
+.env.test
 
 # IDE / Editor
 .vscode/
@@ -19,18 +20,21 @@ Thumbs.db
 
 # Local development artifacts
 local/
+docx_test/
 
 # Kiro / Agent config
 .kiro/
 .agents/
 skills-lock.json
 
-# Playwright
+# Playwright / Tests
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+tests/
+playwright.config.ts
 
 # TestSprite
 testsprite_tests/

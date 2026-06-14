@@ -28,12 +28,15 @@ export interface Submission {
   studentName: string;
   studentInitials: string;
   assignment: string;
+  assignmentId?: string;
   submittedAt: string;
   waitingDays: number;
   status: EvalStatus;
   fileType: "pdf" | "docx" | "google-form";
   fileName: string;
   content: string;
+  answersJson?: Record<string, string> | null;
+  blockJson?: any[] | null;
 }
 
 export interface ActivityEvent {

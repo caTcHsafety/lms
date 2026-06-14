@@ -62,7 +62,7 @@ export default function App() {
           const docTypes = ['PDF', 'DOCUMENT', 'DOCX'];
           
           const deckModules = courseModules.filter(m => slideTypes.includes(m.type || ''));
-          const videoModules = courseModules.filter(m => videoTypes.includes(m.type || ''));
+          const videoModules = courseModules.filter(m => videoTypes.includes(m.type || '') || m.video_url);
           const docModules = courseModules.filter(m => docTypes.includes(m.type || '') || (!m.type && m.module_versions?.[0]?.content_url?.endsWith('.pdf')));
 
           const videos: Video[] = videoModules.map(m => {
@@ -70,10 +70,10 @@ export default function App() {
             return {
               id: m.id,
               title: m.title,
-              durationMin: parseInt(m.duration) || 10,
+              durationMin: parseInt(m.duration) || 0,
               presenter: "Trainer",
               description: m.description || "",
-              url: publishedVer?.content_url || "",
+              url: m.video_url || publishedVer?.content_url || "",
             };
           });
 

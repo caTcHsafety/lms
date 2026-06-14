@@ -37,6 +37,7 @@ import {
   Layers,
   BookOpen,
   ArrowLeft,
+  Download,
 } from "lucide-react";
 
 type ContentType = "VIDEO" | "PPT" | "PDF" | "SCORM" | "LINK" | "QUIZ" | "SLIDES" | "DOCUMENT";
@@ -139,6 +140,34 @@ export function ContentVaultRedesigned() {
   const [loadingVersions, setLoadingVersions] = useState(false);
 
   type Cohort = { id: string; name: string; students: number; moduleIds: string[]; created: string };
+
+  // Cohort student details
+  type CohortStudent = {
+    id: string;
+    fullName: string;
+    email: string;
+    isActive: boolean;
+    modulesCompleted: number;
+    totalModules: number;
+    submissionsCount: number;
+    lastActive: string | null;
+  };
+  type CohortAssignment = {
+    id: string;
+    title: string;
+    description: string | null;
+    dueDate: string | null;
+    studentId: string;
+    studentName: string;
+    submissionStatus: string | null;
+    submissionUrl: string | null;
+    feedback: string | null;
+    submittedAt: string | null;
+    reviewedAt: string | null;
+    answersJson: Record<string, string> | null;
+  };
+  const [cohortStudents, setCohortStudents] = useState<CohortStudent[]>([]);
+  const [cohortAssignments, setCohortAssignments] = useState<CohortAssignment[]>([]);
 
   const loadVaultData = async () => {
     try {
@@ -452,16 +481,227 @@ export function ContentVaultRedesigned() {
     }
   };
 
+  // Load students for selected cohort
+  const loadCohortStudents = async (cohortId: string) => {
+    try {
+      const { data: csData } = await supabase
+        .from("cohort_students")
+        .select("student_id")
+        .eq("cohort_id", cohortId);
+
+      if (!csData || csData.length === 0) {
+        setCohortStudents([]);
+        setCohortAssignments([]);
+        return;
+      }
+
+      const studentIds = csData.map((s: any) => s.student_id);
+
+      const [profilesRes, progressRes, submissionsRes, activityRes, assignmentsRes] = await Promise.all([
+        supabase.from("profiles").select("id, full_name, email, is_active").in("id", studentIds),
+        supabase.from("student_progress").select("student_id, completed").in("student_id", studentIds),
+        supabase.from("submissions").select("*").in("student_id", studentIds),
+        supabase.from("activity_events").select("user_id, created_at, event_type").in("user_id", studentIds).eq("event_type", "LOGIN").order("created_at", { ascending: false }),
+        supabase.from("assignments").select("*, assignment_cohorts!inner(cohort_id)").eq("assignment_cohorts.cohort_id", cohortId),
+      ]);
+
+      const cohort = cohorts.find(c => c.id === cohortId);
+      const totalMods = cohort?.moduleIds.length ?? 0;
+
+      const students: CohortStudent[] = (profilesRes.data || []).map((p: any) => {
+        const completed = (progressRes.data || []).filter((pr: any) => pr.student_id === p.id && pr.completed).length;
+        const subs = (submissionsRes.data || []).filter((s: any) => s.student_id === p.id).length;
+        const lastEvent = (activityRes.data || []).find((a: any) => a.user_id === p.id);
+
+        return {
+          id: p.id,
+          fullName: p.full_name || p.email,
+          email: p.email,
+          isActive: p.is_active ?? true,
+          modulesCompleted: completed,
+          totalModules: totalMods,
+          submissionsCount: subs,
+          lastActive: lastEvent?.created_at || null,
+        };
+      });
+
+      // Build assignment details with submission info per student
+      const assignments: CohortAssignment[] = [];
+      for (const a of (assignmentsRes.data || [])) {
+        for (const sid of studentIds) {
+          const studentProfile = (profilesRes.data || []).find((p: any) => p.id === sid);
+          const sub = (submissionsRes.data || []).find((s: any) => s.student_id === sid && s.assignment_id === a.id);
+          assignments.push({
+            id: a.id,
+            title: a.title || "Untitled",
+            description: a.description || null,
+            dueDate: a.due_date || null,
+            studentId: sid,
+            studentName: studentProfile?.full_name || studentProfile?.email || "Unknown",
+            submissionStatus: sub?.status || null,
+            submissionUrl: sub?.file_url || null,
+            feedback: sub?.feedback || null,
+            submittedAt: sub?.submitted_at || null,
+            reviewedAt: sub?.reviewed_at || null,
+            answersJson: sub?.answers_json || null,
+          });
+        }
+      }
+
+      setCohortStudents(students);
+      setCohortAssignments(assignments);
+    } catch (err) {
+      console.error("Failed to load cohort students", err);
+      setCohortStudents([]);
+      setCohortAssignments([]);
+    }
+  };
+
+  // Toggle student active/inactive
+  const toggleStudentAccess = async (studentId: string, currentActive: boolean) => {
+    const newActive = !currentActive;
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_active: newActive })
+        .eq("id", studentId);
+      if (error) throw error;
+
+      setCohortStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, isActive: newActive } : s))
+      );
+      toast.success(newActive ? "Student access granted" : "Student access revoked");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update access");
+    }
+  };
+
+  // Toggle ALL students active/inactive
+  const toggleAllStudentsAccess = async (makeActive: boolean) => {
+    if (cohortStudents.length === 0) return;
+    try {
+      const ids = cohortStudents.map(s => s.id);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_active: makeActive })
+        .in("id", ids);
+      if (error) throw error;
+      setCohortStudents((prev) => prev.map((s) => ({ ...s, isActive: makeActive })));
+      toast.success(makeActive ? "All students activated" : "All students deactivated");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update access");
+    }
+  };
+
+  // Download cohort details as CSV
+  const downloadCohortCSV = () => {
+    if (!selectedCohort) return;
+    const rows: string[] = [];
+
+    // Header section
+    rows.push("COHORT AUDIT REPORT");
+    rows.push(`Generated,${new Date().toLocaleString()}`);
+    rows.push("");
+    rows.push("COHORT DETAILS");
+    rows.push("Name,Students Enrolled,Modules Assigned,Created Date");
+    rows.push(`"${selectedCohort.name}",${selectedCohort.students},${selectedCohort.moduleIds.length},${selectedCohort.created}`);
+    rows.push("");
+
+    // Students section
+    rows.push("ENROLLED STUDENTS");
+    rows.push("Name,Email,Status,Modules Completed,Total Modules,Submissions,Last Active");
+    for (const s of cohortStudents) {
+      rows.push(`"${s.fullName}","${s.email}",${s.isActive ? "Active" : "Inactive"},${s.modulesCompleted},${s.totalModules},${s.submissionsCount},"${s.lastActive ? new Date(s.lastActive).toLocaleString() : "Never"}"`);
+    }
+    rows.push("");
+
+    // Modules section
+    rows.push("ASSIGNED MODULES");
+    rows.push("Module Name,Course,Subject,Type,Status");
+    for (const m of cohortModules) {
+      const loc = moduleLocation(m.id);
+      const courseName = loc ? loc.course.name : "—";
+      const subjectName = loc ? loc.subject.name : "—";
+      rows.push(`"${m.name}","${courseName}","${subjectName}","${m.type}","${m.status}"`);
+    }
+    rows.push("");
+
+    // Assignments & Submissions section
+    rows.push("ASSIGNMENTS AND SUBMISSIONS");
+    rows.push("Assignment Title,Student Name,Status,Submitted Date,Feedback,Student Answers");
+    for (const a of cohortAssignments) {
+      const submittedDate = a.submittedAt ? new Date(a.submittedAt).toLocaleDateString() : "Not submitted";
+      const feedback = (a.feedback || "—").replace(/"/g, '""');
+      // For file submissions show file URL, for DOCX block answers show inline text
+      let answersText = "—";
+      if (a.submissionUrl) {
+        answersText = a.submissionUrl;
+      } else if (a.answersJson && Object.keys(a.answersJson).length > 0) {
+        // Extract plain text from HTML answers
+        const div = document.createElement("div");
+        answersText = Object.entries(a.answersJson)
+          .map(([key, html]) => {
+            div.innerHTML = html;
+            return `${key}: ${div.textContent || ""}`;
+          })
+          .join(" | ")
+          .replace(/"/g, '""');
+      }
+      rows.push(`"${a.title}","${a.studentName}","${a.submissionStatus || "Not submitted"}","${submittedDate}","${feedback}","${answersText}"`);
+    }
+
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedCohort.name.replace(/\s+/g, "_")}_audit_report.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Reload students when cohort changes
+  useEffect(() => {
+    if (selectedCohortId && subTab === "cohorts") {
+      loadCohortStudents(selectedCohortId);
+      // Load cohort uploads from DB
+      (async () => {
+        const { data } = await supabase
+          .from("cohort_uploads")
+          .select("*")
+          .eq("cohort_id", selectedCohortId)
+          .order("created_at", { ascending: false });
+        if (data) {
+          setCohortUploads((prev) => ({
+            ...prev,
+            [selectedCohortId]: data.map((u: any) => ({
+              id: u.id,
+              name: u.file_name,
+              size: u.file_size_bytes || 0,
+              kind: (u.file_type || "LINK") as ContentType,
+              uploaded: u.created_at?.slice(0, 10) || "",
+              courseId: "",
+              subjectId: "",
+              moduleId: "",
+              note: u.note || undefined,
+              url: u.file_url,
+            })),
+          }));
+        }
+      })();
+    }
+  }, [selectedCohortId, subTab]);
+
   // Per-cohort direct uploads
-  type CohortUpload = { id: string; name: string; size: number; kind: ContentType; uploaded: string; courseId: string; subjectId: string; moduleId: string; note?: string };
+  type CohortUpload = { id: string; name: string; size: number; kind: ContentType; uploaded: string; courseId: string; subjectId: string; moduleId: string; note?: string; url?: string };
   const [cohortUploads, setCohortUploads] = useState<Record<string, CohortUpload[]>>({});
   const [upDlgOpen, setUpDlgOpen] = useState(false);
-  const [upFiles, setUpFiles] = useState<{ name: string; size: number; kind: ContentType }[]>([]);
+  const [upFiles, setUpFiles] = useState<{ name: string; size: number; kind: ContentType; file: File }[]>([]);
   const [upDragOver, setUpDragOver] = useState(false);
   const [upCourseId, setUpCourseId] = useState<string>("");
   const [upSubjectId, setUpSubjectId] = useState<string>("");
   const [upModuleId, setUpModuleId] = useState<string>("");
   const [upNote, setUpNote] = useState("");
+  const [upLoading, setUpLoading] = useState(false);
 
   const kindFromName = (name: string): ContentType => {
     const ext = name.toLowerCase().split(".").pop() ?? "";
@@ -502,30 +742,89 @@ export function ContentVaultRedesigned() {
     setUpDlgOpen(true);
   };
   const addUpFiles = (files: FileList | File[]) => {
-    const arr = Array.from(files).map((f) => ({ name: f.name, size: f.size, kind: kindFromName(f.name) }));
+    const arr = Array.from(files).map((f) => ({ name: f.name, size: f.size, kind: kindFromName(f.name), file: f }));
     setUpFiles((prev) => [...prev, ...arr]);
   };
   const removeUpFile = (idx: number) => setUpFiles((prev) => prev.filter((_, i) => i !== idx));
-  const submitUpload = () => {
+  const submitUpload = async () => {
     if (!selectedCohort || upFiles.length === 0) return;
-    if (!upCourseId || !upSubjectId || !upModuleId) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const additions: CohortUpload[] = upFiles.map((f, i) => ({
-      id: `up-${Date.now()}-${i}`,
-      name: f.name,
-      size: f.size,
-      kind: f.kind,
-      uploaded: today,
-      courseId: upCourseId,
-      subjectId: upSubjectId,
-      moduleId: upModuleId,
-      note: upNote.trim() || undefined,
-    }));
-    setCohortUploads((prev) => ({
-      ...prev,
-      [selectedCohort.id]: [...(prev[selectedCohort.id] ?? []), ...additions],
-    }));
-    setUpDlgOpen(false);
+    setUpLoading(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const TEN_MB = 10 * 1024 * 1024;
+      const r2PublicUrl = import.meta.env.VITE_R2_PUBLIC_URL || '';
+      const additions: CohortUpload[] = [];
+
+      for (let i = 0; i < upFiles.length; i++) {
+        const f = upFiles[i];
+        const fileExt = f.name.split('.').pop()?.toLowerCase() || '';
+        let contentUrl = "";
+
+        if (f.size > TEN_MB || f.kind === "SCORM" || f.kind === "VIDEO") {
+          // Large files and SCORM → R2 via presigned URL
+          const r2Key = `cohort-uploads/${selectedCohort.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const { data: presignData, error: presignErr } = await supabase.functions.invoke("r2-presign", {
+            body: { key: r2Key, contentType: f.file.type || "application/octet-stream" },
+          });
+          if (presignErr || !presignData?.presignedUrl) {
+            throw new Error(presignErr?.message || "Failed to get presigned URL");
+          }
+          const uploadResp = await fetch(presignData.presignedUrl, {
+            method: "PUT",
+            body: f.file,
+            headers: { "Content-Type": f.file.type || "application/octet-stream" },
+          });
+          if (!uploadResp.ok) throw new Error(`R2 upload failed: ${uploadResp.status}`);
+          contentUrl = `${r2PublicUrl}/${r2Key}`;
+        } else {
+          // Small files → Supabase Storage
+          const uniqueName = `cohort-uploads/${selectedCohort.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const { error: uploadErr } = await supabase.storage.from("module_content").upload(uniqueName, f.file);
+          if (uploadErr) throw uploadErr;
+          const { data: publicUrlData } = supabase.storage.from("module_content").getPublicUrl(uniqueName);
+          contentUrl = publicUrlData.publicUrl;
+        }
+
+        additions.push({
+          id: `up-${Date.now()}-${i}`,
+          name: f.name,
+          size: f.size,
+          kind: f.kind,
+          uploaded: today,
+          courseId: upCourseId,
+          subjectId: upSubjectId,
+          moduleId: upModuleId,
+          note: upNote.trim() || undefined,
+          url: contentUrl,
+        });
+
+        // Persist to cohort_uploads table
+        await supabase.from("cohort_uploads").insert({
+          cohort_id: selectedCohort.id,
+          file_name: f.name,
+          file_url: contentUrl,
+          file_size_bytes: f.size,
+          file_type: f.kind,
+          note: upNote.trim() || null,
+        });
+
+        // If it's a video and assigned to a module, set as module's video_url
+        if (f.kind === "VIDEO" && upModuleId) {
+          await supabase.from("modules").update({ video_url: contentUrl }).eq("id", upModuleId);
+        }
+      }
+
+      setCohortUploads((prev) => ({
+        ...prev,
+        [selectedCohort.id]: [...(prev[selectedCohort.id] ?? []), ...additions],
+      }));
+      toast.success(`${additions.length} file(s) uploaded successfully`);
+      setUpDlgOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUpLoading(false);
+    }
   };
   const deleteUpload = (cohortId: string, uploadId: string) => {
     setCohortUploads((prev) => ({
@@ -851,9 +1150,10 @@ export function ContentVaultRedesigned() {
 
         let contentUrl = "";
         const TEN_MB = 10 * 1024 * 1024;
+        const isVideoFile = ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(fileExt);
 
-        if (file.size > TEN_MB) {
-          // Large file → upload to Cloudflare R2 via presigned URL
+        if (file.size > TEN_MB || isVideoFile) {
+          // Large files and ALL videos → upload to Cloudflare R2 via presigned URL
           const r2Key = `content/${selectedModuleId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           const { data: presignData, error: presignErr } = await supabase.functions.invoke("r2-presign", {
             body: { key: r2Key, contentType: file.type || "application/octet-stream" },
@@ -1647,7 +1947,7 @@ export function ContentVaultRedesigned() {
           </aside>
 
           {/* Detail: assigned modules for selected cohort */}
-          <main className="flex-1 min-w-0 bg-[#fafafa]">
+          <main className="flex-1 min-w-0 bg-[#fafafa] overflow-auto">
             {selectedCohort && (
               <>
                 <div className="bg-white border-b border-[#e2e2e4] px-8 py-5 flex items-center justify-between gap-4">
@@ -1660,6 +1960,13 @@ export function ContentVaultRedesigned() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={downloadCohortCSV}
+                      className="bg-white border border-[#c4c6ce] hover:bg-[#fafafa] text-[#0d2543] px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                    >
+                      <Download className="size-3.5" />
+                      CSV
+                    </button>
                     <button
                       onClick={openUploadDialog}
                       className="bg-white border border-[#c4c6ce] hover:bg-[#fafafa] text-[#0d2543] px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
@@ -1799,6 +2106,174 @@ export function ContentVaultRedesigned() {
                       </div>
                     )}
                   </div>
+                  {/* Cohort Students */}
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-['Inter'] font-semibold text-xs text-[#44474e] uppercase tracking-[0.6px]">Students</h3>
+                      <div className="flex items-center gap-2">
+                        {cohortStudents.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => toggleAllStudentsAccess(true)}
+                              className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-['Inter'] bg-[#e6f4ea] text-[#1e7e34] hover:bg-[#c8e6c9] transition-colors"
+                            >
+                              Activate All
+                            </button>
+                            <button
+                              onClick={() => toggleAllStudentsAccess(false)}
+                              className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-['Inter'] bg-[#fde8e8] text-[#c0392b] hover:bg-[#f5c6cb] transition-colors"
+                            >
+                              Deactivate All
+                            </button>
+                          </>
+                        )}
+                        <span className="font-['Inter'] text-sm text-[#74777E]">
+                          {cohortStudents.length} enrolled
+                        </span>
+                      </div>
+                    </div>
+                    {cohortStudents.length === 0 ? (
+                      <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-8 text-center">
+                        <GraduationCap className="size-7 text-[#c4c6ce] mx-auto mb-2" />
+                        <p className="font-['Inter'] text-sm text-[#74777E]">
+                          No students enrolled in this cohort yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl border border-[#e2e2e4] overflow-hidden">
+                        <table className="w-full">
+                          <thead className="bg-[#fafafa] border-b border-[#e2e2e4]">
+                            <tr>
+                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Student</th>
+                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Progress</th>
+                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Submissions</th>
+                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Last Active</th>
+                              <th className="text-center font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Access</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cohortStudents.map((student) => (
+                              <tr key={student.id} className="border-b border-[#f0f0f2] last:border-b-0 hover:bg-[#fafafa]">
+                                <td className="px-4 py-3">
+                                  <div className="font-['Inter'] text-sm text-[#1a1c1d] font-medium">{student.fullName}</div>
+                                  <div className="font-['Inter'] text-xs text-[#74777E]">{student.email}</div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-24 h-1.5 bg-[#e2e2e4] rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-[#00658d] rounded-full transition-all"
+                                        style={{ width: `${student.totalModules > 0 ? (student.modulesCompleted / student.totalModules) * 100 : 0}%` }}
+                                      />
+                                    </div>
+                                    <span className="font-['Inter'] text-xs text-[#74777E] tabular-nums">
+                                      {student.modulesCompleted}/{student.totalModules}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#74777E] tabular-nums">
+                                  {student.submissionsCount}
+                                </td>
+                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#74777E] tabular-nums">
+                                  {student.lastActive ? formatRelative(student.lastActive) : "Never"}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <button
+                                    onClick={() => toggleStudentAccess(student.id, student.isActive)}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold font-['Inter'] transition-colors ${
+                                      student.isActive
+                                        ? "bg-[#e6f4ea] text-[#1e7e34] hover:bg-[#c8e6c9]"
+                                        : "bg-[#fde8e8] text-[#c0392b] hover:bg-[#f5c6cb]"
+                                    }`}
+                                  >
+                                    {student.isActive ? "Active" : "Inactive"}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                  {/* Cohort Assignments & Submissions */}
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-['Inter'] font-semibold text-xs text-[#44474e] uppercase tracking-[0.6px]">Assignments & Submissions</h3>
+                      <span className="font-['Inter'] text-sm text-[#74777E]">
+                        {[...new Set(cohortAssignments.map(a => a.id))].length} assignments
+                      </span>
+                    </div>
+                    {cohortAssignments.length === 0 ? (
+                      <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-8 text-center">
+                        <FileUp className="size-7 text-[#c4c6ce] mx-auto mb-2" />
+                        <p className="font-['Inter'] text-sm text-[#74777E]">
+                          No assignments given to this cohort yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {[...new Set(cohortAssignments.map(a => a.id))].map((assignmentId) => {
+                          const assignment = cohortAssignments.find(a => a.id === assignmentId)!;
+                          const studentSubmissions = cohortAssignments.filter(a => a.id === assignmentId);
+                          return (
+                            <div key={assignmentId} className="bg-white rounded-xl border border-[#e2e2e4] overflow-hidden">
+                              <div className="px-4 py-3 border-b border-[#f0f0f2] bg-[#fafafa]">
+                                <div className="font-['Inter'] text-sm font-semibold text-[#0d2543]">{assignment.title}</div>
+                                {assignment.description && (
+                                  <p className="font-['Inter'] text-xs text-[#74777E] mt-0.5">{assignment.description}</p>
+                                )}
+                                {assignment.dueDate && (
+                                  <span className="font-['Inter'] text-xs text-[#74777E] mt-1 inline-block">Due: {assignment.dueDate.slice(0, 10)}</span>
+                                )}
+                              </div>
+                              <table className="w-full">
+                                <thead className="border-b border-[#f0f0f2]">
+                                  <tr>
+                                    <th className="text-left font-['Inter'] font-semibold text-[10px] uppercase tracking-[0.5px] text-[#74777E] px-4 py-2">Student</th>
+                                    <th className="text-left font-['Inter'] font-semibold text-[10px] uppercase tracking-[0.5px] text-[#74777E] px-4 py-2">Status</th>
+                                    <th className="text-left font-['Inter'] font-semibold text-[10px] uppercase tracking-[0.5px] text-[#74777E] px-4 py-2">Submitted</th>
+                                    <th className="text-left font-['Inter'] font-semibold text-[10px] uppercase tracking-[0.5px] text-[#74777E] px-4 py-2">Feedback</th>
+                                    <th className="text-left font-['Inter'] font-semibold text-[10px] uppercase tracking-[0.5px] text-[#74777E] px-4 py-2">File</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {studentSubmissions.map((sub) => (
+                                    <tr key={`${sub.id}-${sub.studentId}`} className="border-b border-[#f0f0f2] last:border-b-0">
+                                      <td className="px-4 py-2 font-['Inter'] text-xs text-[#1a1c1d]">{sub.studentName}</td>
+                                      <td className="px-4 py-2">
+                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                          sub.submissionStatus === "approved" ? "bg-[#e6f4ea] text-[#1e7e34]" :
+                                          sub.submissionStatus === "needs_revision" ? "bg-[#fff3cd] text-[#856404]" :
+                                          sub.submissionStatus === "pending" ? "bg-[#e8f0fe] text-[#1a73e8]" :
+                                          "bg-[#f3f3f5] text-[#74777E]"
+                                        }`}>
+                                          {sub.submissionStatus || "Not submitted"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2 font-['Inter'] text-xs text-[#74777E] tabular-nums">
+                                        {sub.submittedAt ? formatRelative(sub.submittedAt) : "—"}
+                                      </td>
+                                      <td className="px-4 py-2 font-['Inter'] text-xs text-[#74777E] max-w-[200px] truncate">
+                                        {sub.feedback || "—"}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        {sub.submissionUrl ? (
+                                          <a href={sub.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-[#00658d] text-xs hover:underline">View Submission</a>
+                                        ) : sub.answersJson && Object.keys(sub.answersJson).length > 0 ? (
+                                          <span className="text-[#1e7e34] text-xs font-medium">✓ Answered</span>
+                                        ) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -1837,37 +2312,59 @@ export function ContentVaultRedesigned() {
             </div>
 
             <div className="flex-1 overflow-auto p-6 space-y-4">
-              {/* Course / Subject / Module selectors */}
+              {/* Course / Subject / Module selectors with create-new */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="font-['Inter'] font-semibold text-xs text-[#74777E] uppercase tracking-[0.6px] mb-1 block">Course</label>
                   <select
                     value={upCourseId}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const id = e.target.value;
-                      setUpCourseId(id);
-                      const c = courses.find((cc) => cc.id === id);
-                      const s0 = c?.subjects[0];
-                      setUpSubjectId(s0?.id ?? "");
-                      setUpModuleId(s0?.modules[0]?.id ?? "");
+                      if (id === "__new__") {
+                        const name = prompt("Enter new course name:");
+                        if (!name?.trim()) return;
+                        const code = name.trim().substring(0, 4).toUpperCase() + "-" + Date.now().toString(36).slice(-3);
+                        const { data, error } = await supabase.from("courses").insert({ title: name.trim(), code, is_active: true }).select().single();
+                        if (error) { toast.error(error.message); return; }
+                        toast.success("Course created");
+                        await loadVaultData();
+                        setUpCourseId(data.id);
+                      } else {
+                        setUpCourseId(id);
+                        const c = courses.find((cc) => cc.id === id);
+                        const s0 = c?.subjects[0];
+                        setUpSubjectId(s0?.id ?? "");
+                        setUpModuleId(s0?.modules[0]?.id ?? "");
+                      }
                     }}
                     className="w-full bg-white border border-[#c4c6ce] rounded-md px-2.5 py-2 font-['Inter'] text-sm focus:border-[#4493bf] focus:ring-2 focus:ring-[#4493bf] outline-none"
                   >
                     {courses.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
+                    <option value="__new__">+ Create New Course</option>
                   </select>
                 </div>
                 <div>
                   <label className="font-['Inter'] font-semibold text-xs text-[#74777E] uppercase tracking-[0.6px] mb-1 block">Subject</label>
                   <select
                     value={upSubjectId}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const id = e.target.value;
-                      setUpSubjectId(id);
-                      const c = courses.find((cc) => cc.id === upCourseId);
-                      const s = c?.subjects.find((ss) => ss.id === id);
-                      setUpModuleId(s?.modules[0]?.id ?? "");
+                      if (id === "__new__") {
+                        const name = prompt("Enter new subject name:");
+                        if (!name?.trim() || !upCourseId) return;
+                        const { data, error } = await supabase.from("subjects").insert({ name: name.trim(), course_id: upCourseId }).select().single();
+                        if (error) { toast.error(error.message); return; }
+                        toast.success("Subject created");
+                        await loadVaultData();
+                        setUpSubjectId(data.id);
+                      } else {
+                        setUpSubjectId(id);
+                        const c = courses.find((cc) => cc.id === upCourseId);
+                        const s = c?.subjects.find((ss) => ss.id === id);
+                        setUpModuleId(s?.modules[0]?.id ?? "");
+                      }
                     }}
                     disabled={!upCourseId}
                     className="w-full bg-white border border-[#c4c6ce] rounded-md px-2.5 py-2 font-['Inter'] text-sm focus:border-[#4493bf] focus:ring-2 focus:ring-[#4493bf] outline-none disabled:bg-[#f3f3f5]"
@@ -1875,19 +2372,35 @@ export function ContentVaultRedesigned() {
                     {(courses.find((c) => c.id === upCourseId)?.subjects ?? []).map((s) => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
+                    <option value="__new__">+ Create New Subject</option>
                   </select>
                 </div>
                 <div>
                   <label className="font-['Inter'] font-semibold text-xs text-[#74777E] uppercase tracking-[0.6px] mb-1 block">Module</label>
                   <select
                     value={upModuleId}
-                    onChange={(e) => setUpModuleId(e.target.value)}
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      if (id === "__new__") {
+                        const name = prompt("Enter new module name:");
+                        if (!name?.trim() || !upSubjectId) return;
+                        const code = "M-" + Date.now().toString(36).slice(-4).toUpperCase();
+                        const { data, error } = await supabase.from("modules").insert({ title: name.trim(), subject_id: upSubjectId, type: "SCORM", code }).select().single();
+                        if (error) { toast.error(error.message); return; }
+                        toast.success("Module created");
+                        await loadVaultData();
+                        setUpModuleId(data.id);
+                      } else {
+                        setUpModuleId(id);
+                      }
+                    }}
                     disabled={!upSubjectId}
                     className="w-full bg-white border border-[#c4c6ce] rounded-md px-2.5 py-2 font-['Inter'] text-sm focus:border-[#4493bf] focus:ring-2 focus:ring-[#4493bf] outline-none disabled:bg-[#f3f3f5]"
                   >
                     {(courses.find((c) => c.id === upCourseId)?.subjects.find((s) => s.id === upSubjectId)?.modules ?? []).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
+                    <option value="__new__">+ Create New Module</option>
                   </select>
                 </div>
               </div>
@@ -1955,11 +2468,11 @@ export function ContentVaultRedesigned() {
               </button>
               <button
                 onClick={submitUpload}
-                disabled={upFiles.length === 0 || !upCourseId || !upSubjectId || !upModuleId}
+                disabled={upFiles.length === 0 || upLoading}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed"
               >
                 <Upload className="size-3.5" />
-                Upload {upFiles.length > 0 ? `(${upFiles.length})` : ""}
+                {upLoading ? "Uploading…" : `Upload ${upFiles.length > 0 ? `(${upFiles.length})` : ""}`}
               </button>
             </div>
           </div>
@@ -1980,7 +2493,7 @@ export function ContentVaultRedesigned() {
                 <h2 className="font-['Inter'] font-semibold text-[17px] text-[#0B1B33]">
                   {editingCohortId ? "Manage Cohort Content" : "Create Cohort"}
                 </h2>
-                <p className="font-['Inter'] text-sm text-[#74777E] mt-0.5">Step {coStep} of 4 — {["Cohort details", "Select courses", "Select subjects", "Select modules"][coStep - 1]}</p>
+                <p className="font-['Inter'] text-sm text-[#74777E] mt-0.5">Step {coStep} of 4 — {["Cohort details", "Select courses (optional)", "Select subjects (optional)", "Select modules (optional)"][coStep - 1]}</p>
               </div>
               <button onClick={() => setCoDlgOpen(false)} className="size-8 rounded-md hover:bg-[#f3f3f5] flex items-center justify-center text-[#74777E]">
                 <X className="size-4" />
@@ -2194,11 +2707,7 @@ export function ContentVaultRedesigned() {
                 {coStep < 4 ? (
                   <button
                     onClick={() => setCoStep((s) => (s + 1) as 1 | 2 | 3 | 4)}
-                    disabled={
-                      (coStep === 1 && !coName.trim()) ||
-                      (coStep === 2 && coCourseIds.size === 0) ||
-                      (coStep === 3 && coSubjectIds.size === 0)
-                    }
+                    disabled={coStep === 1 && !coName.trim()}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed"
                   >
                     Continue
@@ -2207,7 +2716,7 @@ export function ContentVaultRedesigned() {
                 ) : (
                   <button
                     onClick={saveCohort}
-                    disabled={coModuleIds.size === 0}
+                    disabled={false}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed"
                   >
                     <Check className="size-3.5" />
