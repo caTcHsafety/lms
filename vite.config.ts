@@ -24,30 +24,35 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: [],  // Don't include missing assets
       manifest: {
         name: 'SafetyCatch Enterprise LMS',
         short_name: 'SafetyCatch',
         description: 'Offline-capable enterprise LMS',
         theme_color: '#0D2543',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
+        icons: []  // Remove icon references for now
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        importScripts: ['/sw-offline.js'],
+        importScripts: ['/sw-offline.js'],  // Re-added: conflict was from duplicate index.html entries, not this
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api/, /^\/auth/],
+        // REMOVED: additionalManifestEntries - was causing duplicate entry conflict
         runtimeCaching: [
+          {
+            // Cache ALL navigation requests (HTML documents)
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 // 1 day
+              },
+              networkTimeoutSeconds: 3
+            }
+          },
           {
             // Cache Supabase PostgREST API calls (metadata: courses, modules, profiles)
             // but NOT storage file downloads (those are only cached via explicit download)

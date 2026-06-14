@@ -22,6 +22,25 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
   const [recentFeedback, setRecentFeedback] = useState<{ id: string; assignmentId: string; title: string; feedback: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState<string>("");
+  
+  // Real-time offline status tracker
+  const [isOnline, setIsOnline] = useState(true); // Start as true to avoid flash
+  
+  useEffect(() => {
+    // Check immediately on mount
+    setIsOnline(navigator.onLine);
+    
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const monthLabels = (() => {
       const labels = [];
@@ -42,10 +61,27 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
 
   useEffect(() => {
     if (!user || !user.id) return;
+    
+    // Offline check - use cached data
     if (!navigator.onLine) {
+        try {
+          const cachedStr = localStorage.getItem(`student_dashboard_${user.id}`);
+          if (cachedStr) {
+            const cached = JSON.parse(cachedStr);
+            setFullName(cached.fullName || "");
+            setStreak(cached.streak || 0);
+            setPendingAssignments(cached.pendingAssignments || []);
+            setCourses(cached.courses || []);
+            setRecentFeedback(cached.recentFeedback || []);
+            setActivity(cached.activity || Array(364).fill(0));
+          }
+        } catch (e) {
+          console.error("Failed to load cached dashboard:", e);
+        }
         setLoading(false);
         return;
     }
+    
     let isMounted = true;
     (async () => {
       try {
@@ -293,8 +329,34 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
         setCourses(courseList.slice(0, 2));
         setPendingAssignments(pending.slice(0, 3));
         setRecentFeedback(feedbackList.slice(0, 3));
+        
+        // Cache for offline use
+        localStorage.setItem(`student_dashboard_${user.id}`, JSON.stringify({
+          fullName,
+          streak: calculatedStreak,
+          activity: newAct,
+          courses: courseList.slice(0, 2),
+          pendingAssignments: pending.slice(0, 3),
+          recentFeedback: feedbackList.slice(0, 3),
+        }));
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
+        
+        // Try loading from cache on error
+        try {
+          const cachedStr = localStorage.getItem(`student_dashboard_${user.id}`);
+          if (cachedStr && isMounted) {
+            const cached = JSON.parse(cachedStr);
+            setFullName(cached.fullName || "");
+            setStreak(cached.streak || 0);
+            setPendingAssignments(cached.pendingAssignments || []);
+            setCourses(cached.courses || []);
+            setRecentFeedback(cached.recentFeedback || []);
+            setActivity(cached.activity || Array(364).fill(0));
+          }
+        } catch (cacheErr) {
+          console.error("Failed to load cached dashboard:", cacheErr);
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -316,6 +378,14 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
 
   return (
     <div className="w-full px-4 md:px-8 lg:px-12 xl:px-16 py-6 h-[calc(100vh-80px)] flex flex-col gap-6">
+      
+      {/* Offline Indicator Banner */}
+      {!isOnline && (
+        <div className="text-white px-4 py-3 rounded-lg text-center text-sm font-medium -mt-2 mb-2" style={{ backgroundColor: "#0D2543" }}>
+          Offline Mode - Only Downloaded Content Will Be Shown.
+        </div>
+      )}
+
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: NAVY, letterSpacing: "-0.3px" }}>

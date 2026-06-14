@@ -17,28 +17,82 @@ export default function App() {
   const [trainerKits, setTrainerKits] = useState<TrainerKit[]>([]);
   const [theater, setTheater] = useState<{ deckId: string; version: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Real-time offline status tracker
+  const [isOnline, setIsOnline] = useState(true); // Start as true to avoid flash
+  
+  useEffect(() => {
+    // Check immediately on mount
+    setIsOnline(navigator.onLine);
+    
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadData() {
       if (!user) return;
       setIsLoading(true);
+
+      // Check if offline and use cached data
+      const isOffline = !navigator.onLine;
+      if (isOffline) {
+        try {
+          const cachedKits = localStorage.getItem(`trainer_kits_${user.id}`);
+          const cachedDecks = localStorage.getItem(`trainer_decks_${user.id}`);
+          const cachedBroadcasts = localStorage.getItem(`trainer_broadcasts_${user.id}`);
+          
+          if (cachedKits && cachedDecks && cachedBroadcasts) {
+            setTrainerKits(JSON.parse(cachedKits));
+            setDecks(JSON.parse(cachedDecks));
+            setBroadcasts(JSON.parse(cachedBroadcasts));
+            setIsLoading(false);
+            return;
+          } else {
+            // No cached data available offline
+            setIsLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to load offline trainer data:", e);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       try {
+        // Add timeout to prevent hanging
+        const timeout = (ms: number) => new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), ms)
+        );
+
         const [
           { data: profileData },
           { data: coursesData },
           { data: modulesData },
           { data: broadcastsData },
-        ] = await Promise.all([
-          supabase.from("profiles").select("full_name").eq("id", user.id).single(),
-          supabase.from("courses").select("*").eq("is_active", true),
-          supabase.from("modules").select(`*, module_versions (*)`).order("order_index"),
-          supabase.from("broadcasts").select(`
-            *,
-            published_by_profile:profiles!broadcasts_published_by_fkey ( full_name ),
-            broadcast_audiences ( role_target, cohort_target ),
-            broadcast_acks (broadcast_id, user_id, acked_at, dismissed_at)
-          `).order("published_at", { ascending: false }),
-        ]);
+        ] = await Promise.race([
+          Promise.all([
+            supabase.from("profiles").select("full_name").eq("id", user.id).single(),
+            supabase.from("courses").select("*").eq("is_active", true),
+            supabase.from("modules").select(`*, module_versions (*)`).order("order_index"),
+            supabase.from("broadcasts").select(`
+              *,
+              published_by_profile:profiles!broadcasts_published_by_fkey ( full_name ),
+              broadcast_audiences ( role_target, cohort_target ),
+              broadcast_acks (broadcast_id, user_id, acked_at, dismissed_at)
+            `).order("published_at", { ascending: false }),
+          ]),
+          timeout(5000) // 5 second timeout
+        ]) as any;
 
         let assignedModuleIds: string[] = [];
         if (user?.id) {
@@ -169,8 +223,28 @@ export default function App() {
         setDecks(finalDecks);
         setBroadcasts(mappedBroadcasts);
 
+        // Cache for offline use
+        localStorage.setItem(`trainer_kits_${user.id}`, JSON.stringify(kits));
+        localStorage.setItem(`trainer_decks_${user.id}`, JSON.stringify(finalDecks));
+        localStorage.setItem(`trainer_broadcasts_${user.id}`, JSON.stringify(mappedBroadcasts));
+
       } catch (err) {
         console.error("Error loading trainer data", err);
+        
+        // Try loading from cache on error
+        try {
+          const cachedKits = localStorage.getItem(`trainer_kits_${user.id}`);
+          const cachedDecks = localStorage.getItem(`trainer_decks_${user.id}`);
+          const cachedBroadcasts = localStorage.getItem(`trainer_broadcasts_${user.id}`);
+          
+          if (cachedKits && cachedDecks && cachedBroadcasts) {
+            setTrainerKits(JSON.parse(cachedKits));
+            setDecks(JSON.parse(cachedDecks));
+            setBroadcasts(JSON.parse(cachedBroadcasts));
+          }
+        } catch (cacheErr) {
+          console.error("Failed to load cached trainer data:", cacheErr);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -216,7 +290,30 @@ export default function App() {
   if (isLoading) {
     return (
       <div className="min-h-screen w-full bg-[#f3f3f5] font-['Inter'] antialiased flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#0d2543] size-8" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="animate-spin text-[#0d2543] size-8" />
+          <p className="text-sm text-[#717182]">Loading trainer content...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show offline message if no data available
+  if (!navigator.onLine && decks.length === 0 && trainerKits.length === 0) {
+    return (
+      <div className="min-h-screen w-full bg-[#f3f3f5] font-['Inter'] antialiased">
+        <TopNav route={route} onNavigate={setRoute} unread={0} />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center max-w-md px-6">
+            <div className="size-16 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="size-8" />
+            </div>
+            <h2 className="text-xl font-semibold text-[#0d2543] mb-2">Offline Mode</h2>
+            <p className="text-[#717182]">
+              You are offline and no content has been cached. Please reconnect to the internet to load your trainer content.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -224,6 +321,13 @@ export default function App() {
   return (
     <div className="min-h-screen w-full bg-[#f3f3f5] font-['Inter'] antialiased">
       <TopNav route={route} onNavigate={setRoute} unread={unread} />
+
+      {/* Offline Indicator Banner */}
+      {!isOnline && (
+        <div className="text-white px-4 py-2 text-center text-sm font-medium" style={{ backgroundColor: "#0D2543" }}>
+          Offline Mode - Only Downloaded Content Will Be Shown.
+        </div>
+      )}
 
       {route === "dashboard" && (
         <Dashboard

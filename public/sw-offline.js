@@ -1,31 +1,59 @@
 /**
  * SafetyCatch Offline Content Service Worker
  * 
- * Two-mode handler:
- * 1. /scorm-proxy/* requests → maps to R2 URLs in cache (same-origin serving for iframes)
- * 2. Direct R2 r2.dev/content/* requests → CacheFirst (for online caching)
+ * CRITICAL CHANGE: This service worker NO LONGER auto-caches content on fetch.
+ * Content is ONLY cached when explicitly downloaded via the OfflineDownloadButton.
  * 
- * The proxy approach ensures the iframe + all sub-resources (including video)
- * are served from the same origin as the SW, so fetch interception works offline.
+ * This service worker is imported by the Workbox service worker via importScripts.
+ * Workbox handles caching of app assets (JS, CSS). This handles R2 content only.
+ * 
+ * Three-mode handler:
+ * 1. Navigation requests (HTML pages) → Let Workbox handle via precache
+ * 2. /scorm-proxy/* requests → maps to R2 URLs in cache (same-origin serving for iframes)
+ * 3. Direct R2 r2.dev/content/* requests → CacheFirst (but NO auto-caching on miss)
  */
+
+console.log('[SW-OFFLINE] Script loaded and executing');
 
 const CACHE_NAME = 'r2-offline-content';
 const R2_BASE = 'https://pub-b98d83e63e884247aed6314345f7f167.r2.dev';
 
+// Don't override Workbox's install/activate events
+// Workbox will handle app shell caching
+
+// Message event - handle skipWaiting from page
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW-OFFLINE] Received SKIP_WAITING message');
+    self.skipWaiting();
+  }
+});
+
+console.log('[SW-OFFLINE] Event listeners registered');
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // ONLY handle R2 content - let Workbox handle EVERYTHING else by not calling event.respondWith()
+  // This includes: navigation, HTML, JS, CSS, images, fonts, API calls, etc.
+  
   // Mode 1: Same-origin proxy requests — /scorm-proxy/{moduleId}/{versionId}/{path}
   if (url.pathname.startsWith('/scorm-proxy/')) {
+    console.log('[SW-OFFLINE] Handling /scorm-proxy/ request:', url.pathname);
     event.respondWith(handleProxyRequest(event.request, url));
     return;
   }
 
-  // Mode 2: Direct R2 content requests — cache on fetch for future offline use
+  // Mode 2: Direct R2 content requests — ONLY serve from cache if already downloaded
+  // DO NOT automatically cache on fetch (prevents unwanted auto-downloads)
   if (event.request.url.includes('r2.dev/content/')) {
+    console.log('[SW-OFFLINE] Handling r2.dev request:', url.pathname);
     event.respondWith(handleR2Request(event.request));
     return;
   }
+
+  // IMPORTANT: Do not call event.respondWith() here!
+  // Letting the event bubble to Workbox's fetch handler by returning early
 });
 
 async function handleProxyRequest(request, url) {
@@ -57,11 +85,8 @@ async function handleProxyRequest(request, url) {
   // Not in cache — try fetching from R2 directly (online)
   try {
     const r2Response = await fetch(r2Url);
-    if (r2Response.ok) {
-      // Cache it for future offline use
-      const clone = r2Response.clone();
-      cache.put(r2Url, clone);
-    }
+    // DO NOT auto-cache: only explicit downloads should cache
+    // if (r2Response.ok) { cache.put(r2Url, clone); }
     return r2Response;
   } catch {
     return new Response('Content not available offline', { status: 503 });
@@ -76,13 +101,15 @@ async function handleR2Request(request) {
 
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
+  
+  // If in cache, serve from cache
   if (cached) return cached;
 
+  // NOT in cache — fetch from network but DO NOT auto-cache
+  // Content is only cached via explicit download action
   try {
     const response = await fetch(request);
-    if (response.ok) {
-      cache.put(request, response.clone());
-    }
+    // DO NOT cache automatically: cache.put(request, response.clone());
     return response;
   } catch {
     return new Response('Offline — content not downloaded', { status: 503 });

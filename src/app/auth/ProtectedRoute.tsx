@@ -54,11 +54,6 @@ export const ProtectedRoute = ({ allowedRoles }: ProtectedRouteProps) => {
 
   return (
     <>
-      {isOffline && (
-        <div className="bg-orange-500 text-white text-center py-1 text-xs font-bold uppercase tracking-wider sticky top-0 z-[100]">
-          Offline Mode - Internet Required for full features
-        </div>
-      )}
       <Outlet />
     </>
   );
