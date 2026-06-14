@@ -1250,8 +1250,8 @@ function ISpringStudentViewer({ url, lessonTitle }: { url: string; lessonTitle: 
   return (
     <div className="flex flex-col h-full w-full">
       <div
-        className="w-full rounded-lg relative bg-[#0D2543]"
-        style={{ aspectRatio: '16 / 9', overflow: 'hidden' }}
+        className="w-full h-full rounded-lg relative bg-[#0D2543]"
+        style={{ overflow: 'hidden' }}
       >
         <iframe
           ref={iframeRef}
@@ -1316,17 +1316,15 @@ function SlideViewer({ lessonTitle, slideUrl, isDownloaded, onDownload, download
   }
 
   return (
-    <div className="flex flex-col h-full w-full min-h-[500px]">
-      <div ref={containerRef} className="flex-1 w-full bg-white rounded-lg shadow-sm border border-[#0D2543]/10 overflow-hidden relative">
-        <iframe ref={iframeRef} src={slideUrl} className="w-full h-full border-none" title={lessonTitle} style={{ backgroundColor: 'white' }} allowFullScreen />
-        <button
-          onClick={toggleFullscreen}
-          className="absolute bottom-3 right-3 size-9 rounded-lg bg-gray-800/70 hover:bg-gray-800/90 text-white flex items-center justify-center backdrop-blur-sm transition-colors shadow-md"
-          title="Toggle Full Screen"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-      </div>
+    <div ref={containerRef} className="h-full w-full bg-white rounded-lg shadow-sm border border-[#0D2543]/10 overflow-hidden relative">
+      <iframe ref={iframeRef} src={slideUrl} className="w-full h-full border-none" title={lessonTitle} style={{ backgroundColor: 'white' }} allowFullScreen />
+      <button
+        onClick={toggleFullscreen}
+        className="absolute bottom-3 right-3 size-9 rounded-lg bg-gray-800/70 hover:bg-gray-800/90 text-white flex items-center justify-center backdrop-blur-sm transition-colors shadow-md"
+        title="Toggle Full Screen"
+      >
+        <Maximize2 className="w-4 h-4" />
+      </button>
     </div>
   );
 }
