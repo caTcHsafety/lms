@@ -681,9 +681,11 @@ export function ContentVaultRedesigned() {
               uploaded: u.created_at?.slice(0, 10) || "",
               courseId: "",
               subjectId: "",
-              moduleId: "",
+              moduleId: u.module_id || "",
               note: u.note || undefined,
               url: u.file_url,
+              subjectName: u.subject_name || "",
+              moduleName: u.module_name || "",
             })),
           }));
         }
@@ -692,7 +694,7 @@ export function ContentVaultRedesigned() {
   }, [selectedCohortId, subTab]);
 
   // Per-cohort direct uploads
-  type CohortUpload = { id: string; name: string; size: number; kind: ContentType; uploaded: string; courseId: string; subjectId: string; moduleId: string; note?: string; url?: string };
+  type CohortUpload = { id: string; name: string; size: number; kind: ContentType; uploaded: string; courseId: string; subjectId: string; moduleId: string; note?: string; url?: string; subjectName?: string; moduleName?: string };
   const [cohortUploads, setCohortUploads] = useState<Record<string, CohortUpload[]>>({});
   const [upDlgOpen, setUpDlgOpen] = useState(false);
   const [upFiles, setUpFiles] = useState<{ name: string; size: number; kind: ContentType; file: File }[]>([]);
@@ -798,6 +800,10 @@ export function ContentVaultRedesigned() {
           url: contentUrl,
         });
 
+        // Get module/subject names for display
+        const selectedModuleObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId)?.modules.find(m => m.id === upModuleId);
+        const selectedSubjectObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId);
+
         // Persist to cohort_uploads table
         await supabase.from("cohort_uploads").insert({
           cohort_id: selectedCohort.id,
@@ -806,6 +812,9 @@ export function ContentVaultRedesigned() {
           file_size_bytes: f.size,
           file_type: f.kind,
           note: upNote.trim() || null,
+          module_id: upModuleId || null,
+          subject_name: selectedSubjectObj?.name || null,
+          module_name: selectedModuleObj?.name || null,
         });
 
         // If it's a video and assigned to a module, set as module's video_url
@@ -2076,6 +2085,8 @@ export function ContentVaultRedesigned() {
                               const c = courses.find((cc) => cc.id === u.courseId);
                               const s = c?.subjects.find((ss) => ss.id === u.subjectId);
                               const m = s?.modules.find((mm) => mm.id === u.moduleId);
+                              const displaySubject = s?.name || u.subjectName || "";
+                              const displayModule = m?.name || u.moduleName || "";
                               return (
                               <tr key={u.id} className="border-b border-[#f0f0f2] last:border-b-0 hover:bg-[#fafafa]">
                                 <td className="px-4 py-3 font-['Inter'] text-sm text-[#1a1c1d] font-medium truncate max-w-[280px]">
@@ -2083,8 +2094,8 @@ export function ContentVaultRedesigned() {
                                   {u.note && <div className="font-['Inter'] text-sm text-[#74777E] font-normal mt-0.5 truncate">{u.note}</div>}
                                 </td>
                                 <td className="px-4 py-3 font-['Inter'] text-sm text-[#44474e]">
-                                  {s ? s.name : "—"}
-                                  <div className="text-sm text-[#74777E]">{m ? m.name : "—"}</div>
+                                  {displaySubject || "—"}
+                                  {displayModule && <div className="text-sm text-[#74777E]">{displayModule}</div>}
                                 </td>
                                 <td className="px-4 py-3"><TypePill type={u.kind} /></td>
                                 <td className="px-4 py-3 font-['Inter'] text-sm text-[#74777E] tabular-nums">{formatBytes(u.size)}</td>
