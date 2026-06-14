@@ -888,7 +888,7 @@ const enrolledCourses = courses;
               </div>
 
               {/* Player area */}
-              <div className="p-5 pt-4 flex-1 flex flex-col min-h-0">
+              <div className="p-5 pt-4 flex flex-col min-h-0">
                 {tab === "video" ? (
                   (current.videoUrl || (current.format === "VIDEO" && current.url)) ? (
                     <VideoPlayer
@@ -1178,7 +1178,7 @@ function VideoPlayer({ playing, onTogglePlay, duration, videoUrl, isDownloaded, 
   return (
     <div className="flex flex-col h-full w-full">
       {surface(false)}
-      <div className="h-14 border border-t-0 border-[#0D2543]/10 bg-[#F2F4F7] rounded-b-lg flex items-center justify-between px-4 flex-shrink-0">
+      <div className="h-12 border border-[#0D2543]/10 bg-[#F2F4F7] rounded-lg mt-2 flex items-center justify-between px-4 flex-shrink-0">
         <span className="text-xs text-[#717182]">Tip: Use the fullscreen button in the video controls for native fullscreen</span>
         <button
           onClick={() => setFullscreen(true)}
@@ -1250,8 +1250,8 @@ function ISpringStudentViewer({ url, lessonTitle }: { url: string; lessonTitle: 
   return (
     <div className="flex flex-col h-full w-full">
       <div
-        className="w-full rounded-lg relative bg-[#0D2543] flex-1"
-        style={{ minHeight: 450, overflow: 'hidden' }}
+        className="w-full rounded-lg relative bg-[#0D2543]"
+        style={{ aspectRatio: '16 / 9', overflow: 'hidden' }}
       >
         <iframe
           ref={iframeRef}
