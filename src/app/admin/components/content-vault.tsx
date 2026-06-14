@@ -787,6 +787,10 @@ export function ContentVaultRedesigned() {
           contentUrl = publicUrlData.publicUrl;
         }
 
+        // Get module/subject names for display
+        const selectedModuleObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId)?.modules.find(m => m.id === upModuleId);
+        const selectedSubjectObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId);
+
         additions.push({
           id: `up-${Date.now()}-${i}`,
           name: f.name,
@@ -798,11 +802,9 @@ export function ContentVaultRedesigned() {
           moduleId: upModuleId,
           note: upNote.trim() || undefined,
           url: contentUrl,
+          subjectName: selectedSubjectObj?.name || "",
+          moduleName: selectedModuleObj?.name || "",
         });
-
-        // Get module/subject names for display
-        const selectedModuleObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId)?.modules.find(m => m.id === upModuleId);
-        const selectedSubjectObj = courses.find(c => c.id === upCourseId)?.subjects.find(s => s.id === upSubjectId);
 
         // Persist to cohort_uploads table
         await supabase.from("cohort_uploads").insert({
@@ -2082,11 +2084,13 @@ export function ContentVaultRedesigned() {
                           </thead>
                           <tbody>
                             {(cohortUploads[selectedCohort.id] ?? []).map((u) => {
+                              // First try to get from stored subject_name/module_name (direct from DB)
+                              // Then fallback to looking up by ID in courses structure
                               const c = courses.find((cc) => cc.id === u.courseId);
                               const s = c?.subjects.find((ss) => ss.id === u.subjectId);
                               const m = s?.modules.find((mm) => mm.id === u.moduleId);
-                              const displaySubject = s?.name || u.subjectName || "";
-                              const displayModule = m?.name || u.moduleName || "";
+                              const displaySubject = u.subjectName || s?.name || "";
+                              const displayModule = u.moduleName || m?.name || "";
                               return (
                               <tr key={u.id} className="border-b border-[#f0f0f2] last:border-b-0 hover:bg-[#fafafa]">
                                 <td className="px-4 py-3 font-['Inter'] text-sm text-[#1a1c1d] font-medium truncate max-w-[280px]">
@@ -2408,9 +2412,15 @@ export function ContentVaultRedesigned() {
                     disabled={!upSubjectId}
                     className="w-full bg-white border border-[#c4c6ce] rounded-md px-2.5 py-2 font-['Inter'] text-sm focus:border-[#4493bf] focus:ring-2 focus:ring-[#4493bf] outline-none disabled:bg-[#f3f3f5]"
                   >
-                    {(courses.find((c) => c.id === upCourseId)?.subjects.find((s) => s.id === upSubjectId)?.modules ?? []).map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
+                    {(() => {
+                      const moduleList = courses.find((c) => c.id === upCourseId)?.subjects.find((s) => s.id === upSubjectId)?.modules ?? [];
+                      if (moduleList.length === 0) {
+                        return <option value="">No modules available - create one</option>;
+                      }
+                      return moduleList.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ));
+                    })()}
                     <option value="__new__">+ Create New Module</option>
                   </select>
                 </div>
@@ -3400,7 +3410,7 @@ function IconBtn({ icon, label, onClick, danger }: { icon: React.ReactNode; labe
 
 function formatRelative(iso: string) {
   const then = new Date(iso).getTime();
-  const now = new Date("2026-05-23").getTime();
+  const now = Date.now();
   const days = Math.round((now - then) / 86400000);
   if (days <= 0) return "today";
   if (days === 1) return "1d ago";
