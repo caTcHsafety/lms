@@ -888,7 +888,7 @@ const enrolledCourses = courses;
               </div>
 
               {/* Player area */}
-              <div className="p-5 pt-4 flex flex-col min-h-0">
+              <div className="p-5 pt-4 flex flex-col min-h-0 flex-1 overflow-hidden">
                 {tab === "video" ? (
                   (current.videoUrl || (current.format === "VIDEO" && current.url)) ? (
                     <VideoPlayer
@@ -1146,7 +1146,7 @@ function VideoPlayer({ playing, onTogglePlay, duration, videoUrl, isDownloaded, 
 
   const surface = (isFs: boolean) => (
     <div
-      className={isFs ? "relative w-full h-full overflow-hidden" : "relative rounded-t-lg overflow-hidden aspect-video flex-shrink-0"}
+      className={isFs ? "relative w-full h-full overflow-hidden" : "relative rounded-t-lg overflow-hidden aspect-video min-h-0 flex-1"}
       style={{ backgroundColor: NAVY }}
     >
       <video
@@ -1176,7 +1176,7 @@ function VideoPlayer({ playing, onTogglePlay, duration, videoUrl, isDownloaded, 
   );
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full min-h-0">
       {surface(false)}
       <div className="h-12 border border-[#0D2543]/10 bg-[#F2F4F7] rounded-lg mt-2 flex items-center justify-between px-4 flex-shrink-0">
         <span className="text-xs text-[#717182]">Tip: Use the fullscreen button in the video controls for native fullscreen</span>
