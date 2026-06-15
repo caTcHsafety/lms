@@ -111,6 +111,12 @@ export function ContentVaultRedesigned() {
   const [draftTrainers, setDraftTrainers] = useState<string[]>([]);
   const [trainers, setTrainers] = useState<any[]>([]);
 
+  // Course trainer assignment dialog
+  const [courseTrainerDlgOpen, setCourseTrainerDlgOpen] = useState(false);
+  const [selectedCourseForTrainer, setSelectedCourseForTrainer] = useState<Course | null>(null);
+  const [courseTrainerSearch, setCourseTrainerSearch] = useState("");
+  const [selectedCourseTrainers, setSelectedCourseTrainers] = useState<string[]>([]);
+
   // +New module dialog
   const [newOpen, setNewOpen] = useState(false);
   const [newMode, setNewMode] = useState<"existing" | "newSubject" | "newCourse">("existing");
@@ -1602,7 +1608,7 @@ export function ContentVaultRedesigned() {
               return (
                 <div
                   key={`c-${row.course.id}`}
-                  className="group w-full grid grid-cols-[1fr_auto_auto] gap-2 items-center px-5 py-2 hover:bg-[#fafafb] border-b border-[#f6f6f7]"
+                  className="group w-full grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center px-5 py-2 hover:bg-[#fafafb] border-b border-[#f6f6f7]"
                 >
                   <button
                     onClick={() => toggleCourse(row.course.id)}
@@ -1614,6 +1620,34 @@ export function ContentVaultRedesigned() {
                     <span className="font-['Inter'] text-sm text-[#74777E] shrink-0">· {count}</span>
                   </button>
                   <span className="font-['Inter'] text-xs text-[#74777E] tracking-[0.2px]">{row.course.code}</span>
+                  <button
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      // Open course trainer assignment dialog
+                      setSelectedCourseForTrainer(row.course);
+                      
+                      // Get all unique trainer IDs from all modules in this course
+                      const allTrainerIds = new Set<string>();
+                      row.course.subjects.forEach(subject => {
+                        subject.modules.forEach(module => {
+                          // Find trainer IDs for this module from trainers array
+                          trainers.forEach(t => {
+                            if (module.trainers.includes(t.full_name)) {
+                              allTrainerIds.add(t.id);
+                            }
+                          });
+                        });
+                      });
+                      
+                      setSelectedCourseTrainers(Array.from(allTrainerIds));
+                      setCourseTrainerSearch("");
+                      setCourseTrainerDlgOpen(true);
+                    }}
+                    title="Assign trainers to course"
+                    className="size-6 rounded flex items-center justify-center text-[#74777E] opacity-0 group-hover:opacity-100 hover:bg-[#e6f4ea] hover:text-[#1e5631] transition-all duration-150 focus:outline-none focus:opacity-100"
+                  >
+                    <UserPlus className="size-3.5" />
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteCourse(row.course.id, row.course.name); }}
                     title="Delete course"
@@ -2751,6 +2785,266 @@ export function ContentVaultRedesigned() {
       )}
 
       {assignOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(13,37,67,0.45)] backdrop-blur-sm p-6"
+          onClick={() => setAssignOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(13,37,67,0.25)] border border-[rgba(15,32,60,0.08)] w-full max-w-[520px] max-h-[88vh] flex flex-col overflow-hidden"
+          >
+            <div className="px-6 py-5 border-b border-[rgba(15,32,60,0.07)] flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-['Inter'] font-semibold text-[17px] text-[#0B1B33] tracking-[-0.2px]">Assign Trainers</h2>
+                <p className="mt-1 font-['Inter'] text-sm text-[#6F7480]">
+                  Select one or more trainers who can deliver{" "}
+                  <span className="font-medium text-[#1a1c1d]">{selectedModule.name}</span>.
+                </p>
+              </div>
+              <button
+                onClick={() => setAssignOpen(false)}
+                aria-label="Close"
+                className="size-8 rounded-full flex items-center justify-center text-[#6F7480] hover:bg-[#f3f3f5] hover:text-[#0d2543] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="px-6 pt-4 pb-3 border-b border-[rgba(15,32,60,0.07)]">
+              <div className="relative">
+                <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9097A2] pointer-events-none" />
+                <input
+                  autoFocus
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  placeholder="Search trainers…"
+                  className="w-full bg-[#F7F9FC] border border-[rgba(15,32,60,0.07)] rounded-lg pl-9 pr-3 py-2 font-['Inter'] text-sm text-[#0B1B33] placeholder:text-[#9097A2] focus:outline-none focus:ring-2 focus:ring-[#4493bf] focus:bg-white transition-all duration-150"
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="font-['Inter'] text-xs font-semibold uppercase tracking-[0.6px] text-[#6F7480]">
+                  {draftTrainers.length} selected
+                </span>
+                {draftTrainers.length > 0 && (
+                  <button
+                    onClick={() => setDraftTrainers([])}
+                    className="font-['Inter'] text-sm text-[#00658d] hover:text-[#004d6b] hover:underline focus:outline-none focus:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto px-2 py-2 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#0d2543]/40">
+              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(assignSearch.toLowerCase())).map((t) => {
+                const checked = draftTrainers.includes(t.full_name);
+                const initials = (t.full_name || "").split(" ").map((p: string) => p[0]).join("").slice(0, 2);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => toggleDraftTrainer(t.full_name)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf] ${
+                      checked ? "bg-[rgba(0,101,141,0.08)]" : "hover:bg-[#F7F9FC]"
+                    }`}
+                  >
+                    <span
+                      className={`size-[18px] rounded-[5px] border flex items-center justify-center transition-colors duration-100 ${
+                        checked ? "bg-[#0d2543] border-[#0d2543] text-white" : "border-[#c4c6ce] bg-white text-transparent"
+                      }`}
+                    >
+                      <Check className="size-3" strokeWidth={3} />
+                    </span>
+                    <span className="size-7 rounded-full bg-[#dff0fa] flex items-center justify-center font-['Inter'] font-semibold text-sm text-[#00587c]">
+                      {initials}
+                    </span>
+                    <span className="flex-1 font-['Inter'] text-sm text-[#0B1B33]">{t.full_name}</span>
+                  </button>
+                );
+              })}
+              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(assignSearch.toLowerCase())).length === 0 && (
+                <div className="px-3 py-6 text-center font-['Inter'] text-sm text-[#6F7480]">
+                  No trainers match "{assignSearch}".
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-[rgba(15,32,60,0.07)] flex items-center justify-end gap-2 bg-[#F7F9FC]">
+              <button
+                onClick={() => setAssignOpen(false)}
+                className="px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-[#44474e] hover:bg-white border border-transparent hover:border-[rgba(15,32,60,0.08)] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveAssign}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf] shadow-[0_1px_2px_rgba(13,37,67,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]"
+              >
+                <UserPlus className="size-3.5" />
+                Save Assignments
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Course Trainer Assignment Dialog */}
+      {courseTrainerDlgOpen && selectedCourseForTrainer && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(13,37,67,0.45)] backdrop-blur-sm p-6"
+          onClick={() => setCourseTrainerDlgOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(13,37,67,0.25)] border border-[rgba(15,32,60,0.08)] w-full max-w-[520px] max-h-[88vh] flex flex-col overflow-hidden"
+          >
+            <div className="px-6 py-5 border-b border-[rgba(15,32,60,0.07)] flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-['Inter'] font-semibold text-[17px] text-[#0B1B33] tracking-[-0.2px]">Assign Trainers to Course</h2>
+                <p className="mt-1 font-['Inter'] text-sm text-[#6F7480]">
+                  Select trainers for all modules in{" "}
+                  <span className="font-medium text-[#1a1c1d]">{selectedCourseForTrainer.name}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setCourseTrainerDlgOpen(false)}
+                aria-label="Close"
+                className="size-8 rounded-full flex items-center justify-center text-[#6F7480] hover:bg-[#f3f3f5] hover:text-[#0d2543] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="px-6 pt-4 pb-3 border-b border-[rgba(15,32,60,0.07)]">
+              <div className="relative">
+                <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9097A2] pointer-events-none" />
+                <input
+                  autoFocus
+                  value={courseTrainerSearch}
+                  onChange={(e) => setCourseTrainerSearch(e.target.value)}
+                  placeholder="Search trainers…"
+                  className="w-full bg-[#F7F9FC] border border-[rgba(15,32,60,0.07)] rounded-lg pl-9 pr-3 py-2 font-['Inter'] text-sm text-[#0B1B33] placeholder:text-[#9097A2] focus:outline-none focus:ring-2 focus:ring-[#4493bf] focus:bg-white transition-all duration-150"
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="font-['Inter'] text-xs font-semibold uppercase tracking-[0.6px] text-[#6F7480]">
+                  {selectedCourseTrainers.length} selected
+                </span>
+                {selectedCourseTrainers.length > 0 && (
+                  <button
+                    onClick={() => setSelectedCourseTrainers([])}
+                    className="font-['Inter'] text-sm text-[#00658d] hover:text-[#004d6b] hover:underline focus:outline-none focus:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto px-2 py-2 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#0d2543]/40">
+              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).map((t) => {
+                const checked = selectedCourseTrainers.includes(t.id);
+                const initials = (t.full_name || "").split(" ").map((p: string) => p[0]).join("").slice(0, 2);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setSelectedCourseTrainers(prev =>
+                        prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                      );
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf] ${
+                      checked ? "bg-[rgba(0,101,141,0.08)]" : "hover:bg-[#F7F9FC]"
+                    }`}
+                  >
+                    <span
+                      className={`size-[18px] rounded-[5px] border flex items-center justify-center transition-colors duration-100 ${
+                        checked ? "bg-[#0d2543] border-[#0d2543] text-white" : "border-[#c4c6ce] bg-white text-transparent"
+                      }`}
+                    >
+                      <Check className="size-3" strokeWidth={3} />
+                    </span>
+                    <span className="size-7 rounded-full bg-[#dff0fa] flex items-center justify-center font-['Inter'] font-semibold text-sm text-[#00587c]">
+                      {initials}
+                    </span>
+                    <span className="flex-1 font-['Inter'] text-sm text-[#0B1B33]">{t.full_name}</span>
+                  </button>
+                );
+              })}
+              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).length === 0 && (
+                <div className="px-3 py-6 text-center font-['Inter'] text-sm text-[#6F7480]">
+                  No trainers match "{courseTrainerSearch}".
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-[rgba(15,32,60,0.07)] flex items-center justify-end gap-2 bg-[#F7F9FC]">
+              <button
+                onClick={() => setCourseTrainerDlgOpen(false)}
+                className="px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-[#44474e] hover:bg-white border border-transparent hover:border-[rgba(15,32,60,0.08)] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!selectedCourseForTrainer) return;
+                  
+                  try {
+                    // Get all modules in this course
+                    const allModuleIds: string[] = [];
+                    selectedCourseForTrainer.subjects.forEach(subject => {
+                      subject.modules.forEach(module => {
+                        allModuleIds.push(module.id);
+                      });
+                    });
+
+                    // Delete existing trainer assignments for these modules
+                    await supabase
+                      .from("module_trainers")
+                      .delete()
+                      .in("module_id", allModuleIds);
+
+                    // Insert new assignments for each selected trainer and module
+                    const insertData = [];
+                    for (const trainerId of selectedCourseTrainers) {
+                      const trainer = trainers.find(t => t.id === trainerId);
+                      if (!trainer) continue;
+                      
+                      for (const moduleId of allModuleIds) {
+                        insertData.push({
+                          module_id: moduleId,
+                          trainer_id: trainerId,
+                          trainer_name: trainer.full_name
+                        });
+                      }
+                    }
+
+                    if (insertData.length > 0) {
+                      const { error } = await supabase
+                        .from("module_trainers")
+                        .insert(insertData);
+                      
+                      if (error) throw error;
+                    }
+
+                    toast.success(`Trainers assigned to all modules in ${selectedCourseForTrainer.name}`);
+                    await loadVaultData();
+                    setCourseTrainerDlgOpen(false);
+                    setSelectedCourseTrainers([]);
+                    setCourseTrainerSearch("");
+                  } catch (err: any) {
+                    toast.error(err.message || "Failed to assign trainers");
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf] shadow-[0_1px_2px_rgba(13,37,67,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]"
+              >
+                <UserPlus className="size-3.5" />
+                Assign to All Modules
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(13,37,67,0.45)] backdrop-blur-sm p-6"
           onClick={() => setAssignOpen(false)}
