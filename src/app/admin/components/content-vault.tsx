@@ -116,6 +116,8 @@ export function ContentVaultRedesigned() {
   const [selectedCourseForTrainer, setSelectedCourseForTrainer] = useState<Course | null>(null);
   const [courseTrainerSearch, setCourseTrainerSearch] = useState("");
   const [selectedCourseTrainers, setSelectedCourseTrainers] = useState<string[]>([]);
+  const [selectedModulesForCourse, setSelectedModulesForCourse] = useState<Set<string>>(new Set());
+  const [expandedSubjectsInDialog, setExpandedSubjectsInDialog] = useState<Set<string>>(new Set());
 
   // +New module dialog
   const [newOpen, setNewOpen] = useState(false);
@@ -669,33 +671,6 @@ export function ContentVaultRedesigned() {
   useEffect(() => {
     if (selectedCohortId && subTab === "cohorts") {
       loadCohortStudents(selectedCohortId);
-      // Load cohort uploads from DB
-      (async () => {
-        const { data } = await supabase
-          .from("cohort_uploads")
-          .select("*")
-          .eq("cohort_id", selectedCohortId)
-          .order("created_at", { ascending: false });
-        if (data) {
-          setCohortUploads((prev) => ({
-            ...prev,
-            [selectedCohortId]: data.map((u: any) => ({
-              id: u.id,
-              name: u.file_name,
-              size: u.file_size_bytes || 0,
-              kind: (u.file_type || "LINK") as ContentType,
-              uploaded: u.created_at?.slice(0, 10) || "",
-              courseId: "",
-              subjectId: "",
-              moduleId: u.module_id || "",
-              note: u.note || undefined,
-              url: u.file_url,
-              subjectName: u.subject_name || "",
-              moduleName: u.module_name || "",
-            })),
-          }));
-        }
-      })();
     }
   }, [selectedCohortId, subTab]);
 
@@ -1628,8 +1603,13 @@ export function ContentVaultRedesigned() {
                       
                       // Get all unique trainer IDs from all modules in this course
                       const allTrainerIds = new Set<string>();
+                      const allModuleIds = new Set<string>();
+                      const allSubjectIds = new Set<string>();
+                      
                       row.course.subjects.forEach(subject => {
+                        allSubjectIds.add(subject.id);
                         subject.modules.forEach(module => {
+                          allModuleIds.add(module.id);
                           // Find trainer IDs for this module from trainers array
                           trainers.forEach(t => {
                             if (module.trainers.includes(t.full_name)) {
@@ -1640,6 +1620,8 @@ export function ContentVaultRedesigned() {
                       });
                       
                       setSelectedCourseTrainers(Array.from(allTrainerIds));
+                      setSelectedModulesForCourse(allModuleIds);
+                      setExpandedSubjectsInDialog(allSubjectIds);
                       setCourseTrainerSearch("");
                       setCourseTrainerDlgOpen(true);
                     }}
@@ -2013,13 +1995,6 @@ export function ContentVaultRedesigned() {
                       CSV
                     </button>
                     <button
-                      onClick={openUploadDialog}
-                      className="bg-white border border-[#c4c6ce] hover:bg-[#fafafa] text-[#0d2543] px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
-                    >
-                      <Upload className="size-3.5" />
-                      Upload Content
-                    </button>
-                    <button
                       onClick={() => openManageCohort(selectedCohort)}
                       className="bg-[#0d2543] hover:bg-[#0a1d33] text-white px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
                     >
@@ -2081,80 +2056,6 @@ export function ContentVaultRedesigned() {
                     </div>
                   )}
 
-                  {/* Cohort-specific uploads */}
-                  <div className="mt-8">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-['Inter'] font-semibold text-xs text-[#44474e] uppercase tracking-[0.6px]">Cohort Uploads</h3>
-                      <span className="font-['Inter'] text-sm text-[#74777E]">
-                        {(cohortUploads[selectedCohort.id] ?? []).length} files
-                      </span>
-                    </div>
-                    {(cohortUploads[selectedCohort.id] ?? []).length === 0 ? (
-                      <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-8 text-center">
-                        <FileUp className="size-7 text-[#c4c6ce] mx-auto mb-2" />
-                        <p className="font-['Inter'] text-sm text-[#74777E] mb-3">
-                          No cohort-specific files yet. Upload videos, PPTs, PDFs or DOCX visible only to this cohort.
-                        </p>
-                        <button
-                          onClick={openUploadDialog}
-                          className="bg-[#00658d] hover:bg-[#004d6b] text-white px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5"
-                        >
-                          <Upload className="size-3.5" />
-                          Upload Content
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="bg-white rounded-xl border border-[#e2e2e4] overflow-hidden">
-                        <table className="w-full">
-                          <thead className="bg-[#fafafa] border-b border-[#e2e2e4]">
-                            <tr>
-                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">File</th>
-                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Subject · Module</th>
-                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Type</th>
-                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Size</th>
-                              <th className="text-left font-['Inter'] font-semibold text-xs uppercase tracking-[0.6px] text-[#74777E] px-4 py-2.5">Uploaded</th>
-                              <th className="px-4 py-2.5" />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(cohortUploads[selectedCohort.id] ?? []).map((u) => {
-                              // First try to get from stored subject_name/module_name (direct from DB)
-                              // Then fallback to looking up by ID in courses structure
-                              const c = courses.find((cc) => cc.id === u.courseId);
-                              const s = c?.subjects.find((ss) => ss.id === u.subjectId);
-                              const m = s?.modules.find((mm) => mm.id === u.moduleId);
-                              const displaySubject = u.subjectName || s?.name || "";
-                              const displayModule = u.moduleName || m?.name || "";
-                              return (
-                              <tr key={u.id} className="border-b border-[#f0f0f2] last:border-b-0 hover:bg-[#fafafa]">
-                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#1a1c1d] font-medium truncate max-w-[280px]">
-                                  {u.name}
-                                  {u.note && <div className="font-['Inter'] text-sm text-[#74777E] font-normal mt-0.5 truncate">{u.note}</div>}
-                                </td>
-                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#44474e]">
-                                  {displaySubject || "—"}
-                                  {displayModule && <div className="text-sm text-[#74777E]">{displayModule}</div>}
-                                </td>
-                                <td className="px-4 py-3"><TypePill type={u.kind} /></td>
-                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#74777E] tabular-nums">{formatBytes(u.size)}</td>
-                                <td className="px-4 py-3 font-['Inter'] text-sm text-[#74777E] tabular-nums">{formatRelative(u.uploaded)}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <button
-                                    onClick={() => deleteUpload(selectedCohort.id, u.id)}
-                                    aria-label="Remove"
-                                    className="size-7 inline-flex items-center justify-center rounded-md text-[#74777E] hover:bg-[#f3f3f5] hover:text-[#c0392b]"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
                   {/* Cohort Students */}
                   <div className="mt-8">
                     <div className="flex items-center justify-between mb-3">
@@ -2896,13 +2797,13 @@ export function ContentVaultRedesigned() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(13,37,67,0.25)] border border-[rgba(15,32,60,0.08)] w-full max-w-[520px] max-h-[88vh] flex flex-col overflow-hidden"
+            className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(13,37,67,0.25)] border border-[rgba(15,32,60,0.08)] w-full max-w-[680px] max-h-[90vh] flex flex-col overflow-hidden"
           >
             <div className="px-6 py-5 border-b border-[rgba(15,32,60,0.07)] flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-['Inter'] font-semibold text-[17px] text-[#0B1B33] tracking-[-0.2px]">Assign Trainers to Course</h2>
                 <p className="mt-1 font-['Inter'] text-sm text-[#6F7480]">
-                  Select trainers for all modules in{" "}
+                  Select trainers and modules for{" "}
                   <span className="font-medium text-[#1a1c1d]">{selectedCourseForTrainer.name}</span>
                 </p>
               </div>
@@ -2915,136 +2816,260 @@ export function ContentVaultRedesigned() {
               </button>
             </div>
 
-            <div className="px-6 pt-4 pb-3 border-b border-[rgba(15,32,60,0.07)]">
-              <div className="relative">
-                <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9097A2] pointer-events-none" />
-                <input
-                  autoFocus
-                  value={courseTrainerSearch}
-                  onChange={(e) => setCourseTrainerSearch(e.target.value)}
-                  placeholder="Search trainers…"
-                  className="w-full bg-[#F7F9FC] border border-[rgba(15,32,60,0.07)] rounded-lg pl-9 pr-3 py-2 font-['Inter'] text-sm text-[#0B1B33] placeholder:text-[#9097A2] focus:outline-none focus:ring-2 focus:ring-[#4493bf] focus:bg-white transition-all duration-150"
-                />
+            <div className="flex-1 overflow-auto [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full">
+              {/* Trainers Section */}
+              <div className="px-6 pt-5 pb-4 border-b border-[rgba(15,32,60,0.07)]">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-['Inter'] font-semibold text-sm text-[#0B1B33] uppercase tracking-[0.6px]">Select Trainers</h3>
+                  <span className="font-['Inter'] text-xs text-[#6F7480] tabular-nums">
+                    {selectedCourseTrainers.length} selected
+                  </span>
+                </div>
+                <div className="relative mb-3">
+                  <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9097A2] pointer-events-none" />
+                  <input
+                    value={courseTrainerSearch}
+                    onChange={(e) => setCourseTrainerSearch(e.target.value)}
+                    placeholder="Search trainers…"
+                    className="w-full bg-[#F7F9FC] border border-[rgba(15,32,60,0.07)] rounded-lg pl-9 pr-3 py-2 font-['Inter'] text-sm text-[#0B1B33] placeholder:text-[#9097A2] focus:outline-none focus:ring-2 focus:ring-[#4493bf] focus:bg-white transition-all duration-150"
+                  />
+                </div>
+                <div className="space-y-1 max-h-[180px] overflow-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1">
+                  {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).map((t) => {
+                    const checked = selectedCourseTrainers.includes(t.id);
+                    const initials = (t.full_name || "").split(" ").map((p: string) => p[0]).join("").slice(0, 2);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setSelectedCourseTrainers(prev =>
+                            prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                          );
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf] ${
+                          checked ? "bg-[rgba(0,101,141,0.08)]" : "hover:bg-[#F7F9FC]"
+                        }`}
+                      >
+                        <span
+                          className={`size-[18px] rounded-[5px] border flex items-center justify-center transition-colors duration-100 ${
+                            checked ? "bg-[#0d2543] border-[#0d2543] text-white" : "border-[#c4c6ce] bg-white text-transparent"
+                          }`}
+                        >
+                          <Check className="size-3" strokeWidth={3} />
+                        </span>
+                        <span className="size-7 rounded-full bg-[#dff0fa] flex items-center justify-center font-['Inter'] font-semibold text-sm text-[#00587c]">
+                          {initials}
+                        </span>
+                        <span className="flex-1 font-['Inter'] text-sm text-[#0B1B33]">{t.full_name}</span>
+                      </button>
+                    );
+                  })}
+                  {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).length === 0 && (
+                    <div className="px-3 py-6 text-center font-['Inter'] text-sm text-[#6F7480]">
+                      No trainers found.
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="font-['Inter'] text-xs font-semibold uppercase tracking-[0.6px] text-[#6F7480]">
-                  {selectedCourseTrainers.length} selected
-                </span>
-                {selectedCourseTrainers.length > 0 && (
-                  <button
-                    onClick={() => setSelectedCourseTrainers([])}
-                    className="font-['Inter'] text-sm text-[#00658d] hover:text-[#004d6b] hover:underline focus:outline-none focus:underline"
-                  >
-                    Clear all
-                  </button>
+
+              {/* Modules Selection Section */}
+              <div className="px-6 pt-5 pb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-['Inter'] font-semibold text-sm text-[#0B1B33] uppercase tracking-[0.6px]">Select Modules</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="font-['Inter'] text-xs text-[#6F7480] tabular-nums">
+                      {selectedModulesForCourse.size} selected
+                    </span>
+                    {selectedModulesForCourse.size > 0 && (
+                      <button
+                        onClick={() => setSelectedModulesForCourse(new Set())}
+                        className="font-['Inter'] text-xs text-[#00658d] hover:text-[#004d6b] hover:underline focus:outline-none"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-[280px] overflow-auto pr-1 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1">
+                  {selectedCourseForTrainer.subjects.map((subject) => {
+                    const subjectModuleIds = subject.modules.map(m => m.id);
+                    const allSelected = subjectModuleIds.every(id => selectedModulesForCourse.has(id));
+                    const someSelected = subjectModuleIds.some(id => selectedModulesForCourse.has(id)) && !allSelected;
+                    const isExpanded = expandedSubjectsInDialog.has(subject.id);
+                    
+                    return (
+                      <div key={subject.id} className="border border-[rgba(15,32,60,0.08)] rounded-lg overflow-hidden bg-white">
+                        {/* Subject Header */}
+                        <div className="flex items-center gap-2 px-3 py-2.5 bg-[#F7F9FC] hover:bg-[#ECEEF1] transition-colors">
+                          <button
+                            onClick={() => {
+                              setExpandedSubjectsInDialog(prev => {
+                                const next = new Set(prev);
+                                isExpanded ? next.delete(subject.id) : next.add(subject.id);
+                                return next;
+                              });
+                            }}
+                            className="size-5 rounded flex items-center justify-center text-[#6F7480] hover:bg-white hover:text-[#0d2543] transition-colors focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                          >
+                            <ChevronRight className={`size-3.5 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedModulesForCourse(prev => {
+                                const next = new Set(prev);
+                                if (allSelected) {
+                                  subjectModuleIds.forEach(id => next.delete(id));
+                                } else {
+                                  subjectModuleIds.forEach(id => next.add(id));
+                                }
+                                return next;
+                              });
+                            }}
+                            className="size-[18px] rounded-[5px] border flex items-center justify-center transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                            style={{
+                              backgroundColor: allSelected ? "#0d2543" : someSelected ? "#0d2543" : "white",
+                              borderColor: allSelected || someSelected ? "#0d2543" : "#c4c6ce",
+                              color: allSelected || someSelected ? "white" : "transparent"
+                            }}
+                          >
+                            {someSelected ? (
+                              <div className="w-2 h-0.5 bg-white rounded" />
+                            ) : (
+                              <Check className="size-3" strokeWidth={3} />
+                            )}
+                          </button>
+                          <Folder className="size-4 text-[#6F7480]" />
+                          <span className="flex-1 font-['Inter'] font-medium text-sm text-[#0B1B33]">{subject.name}</span>
+                          <span className="font-['Inter'] text-xs text-[#6F7480] tabular-nums">
+                            {subject.modules.filter(m => selectedModulesForCourse.has(m.id)).length}/{subject.modules.length}
+                          </span>
+                        </div>
+
+                        {/* Modules List */}
+                        {isExpanded && (
+                          <div className="px-3 py-2 space-y-1 bg-white">
+                            {subject.modules.map((module) => {
+                              const moduleSelected = selectedModulesForCourse.has(module.id);
+                              const meta = TYPE_META[module.type];
+                              const Icon = meta.icon;
+                              
+                              return (
+                                <button
+                                  key={module.id}
+                                  onClick={() => {
+                                    setSelectedModulesForCourse(prev => {
+                                      const next = new Set(prev);
+                                      moduleSelected ? next.delete(module.id) : next.add(module.id);
+                                      return next;
+                                    });
+                                  }}
+                                  className={`w-full flex items-center gap-2.5 pl-7 pr-3 py-2 rounded-md text-left transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf] ${
+                                    moduleSelected ? "bg-[rgba(0,101,141,0.06)]" : "hover:bg-[#F7F9FC]"
+                                  }`}
+                                >
+                                  <span
+                                    className={`size-[16px] rounded border flex items-center justify-center transition-colors duration-100 ${
+                                      moduleSelected ? "bg-[#0d2543] border-[#0d2543] text-white" : "border-[#c4c6ce] bg-white text-transparent"
+                                    }`}
+                                  >
+                                    <Check className="size-2.5" strokeWidth={3} />
+                                  </span>
+                                  <span className={`size-5 rounded flex items-center justify-center ${meta.bg} ${meta.fg}`}>
+                                    <Icon className="size-3" />
+                                  </span>
+                                  <span className="flex-1 font-['Inter'] text-sm text-[#44474e]">{module.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-[rgba(15,32,60,0.07)] flex items-center justify-between gap-3 bg-[#F7F9FC]">
+              <div className="font-['Inter'] text-xs text-[#6F7480]">
+                {selectedCourseTrainers.length > 0 && selectedModulesForCourse.size > 0 ? (
+                  <>
+                    <span className="font-semibold text-[#0d2543]">{selectedCourseTrainers.length}</span> trainer{selectedCourseTrainers.length !== 1 ? "s" : ""} → <span className="font-semibold text-[#0d2543]">{selectedModulesForCourse.size}</span> module{selectedModulesForCourse.size !== 1 ? "s" : ""}
+                  </>
+                ) : (
+                  "Select trainers and modules to assign"
                 )}
               </div>
-            </div>
-
-            <div className="flex-1 overflow-auto px-2 py-2 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#0d2543]/40">
-              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).map((t) => {
-                const checked = selectedCourseTrainers.includes(t.id);
-                const initials = (t.full_name || "").split(" ").map((p: string) => p[0]).join("").slice(0, 2);
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setSelectedCourseTrainers(prev =>
-                        prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id]
-                      );
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors duration-100 focus:outline-none focus:ring-2 focus:ring-[#4493bf] ${
-                      checked ? "bg-[rgba(0,101,141,0.08)]" : "hover:bg-[#F7F9FC]"
-                    }`}
-                  >
-                    <span
-                      className={`size-[18px] rounded-[5px] border flex items-center justify-center transition-colors duration-100 ${
-                        checked ? "bg-[#0d2543] border-[#0d2543] text-white" : "border-[#c4c6ce] bg-white text-transparent"
-                      }`}
-                    >
-                      <Check className="size-3" strokeWidth={3} />
-                    </span>
-                    <span className="size-7 rounded-full bg-[#dff0fa] flex items-center justify-center font-['Inter'] font-semibold text-sm text-[#00587c]">
-                      {initials}
-                    </span>
-                    <span className="flex-1 font-['Inter'] text-sm text-[#0B1B33]">{t.full_name}</span>
-                  </button>
-                );
-              })}
-              {trainers.filter((t) => (t.full_name || "").toLowerCase().includes(courseTrainerSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-6 text-center font-['Inter'] text-sm text-[#6F7480]">
-                  No trainers match "{courseTrainerSearch}".
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 border-t border-[rgba(15,32,60,0.07)] flex items-center justify-end gap-2 bg-[#F7F9FC]">
-              <button
-                onClick={() => setCourseTrainerDlgOpen(false)}
-                className="px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-[#44474e] hover:bg-white border border-transparent hover:border-[rgba(15,32,60,0.08)] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (!selectedCourseForTrainer) return;
-                  
-                  try {
-                    // Get all modules in this course
-                    const allModuleIds: string[] = [];
-                    selectedCourseForTrainer.subjects.forEach(subject => {
-                      subject.modules.forEach(module => {
-                        allModuleIds.push(module.id);
-                      });
-                    });
-
-                    // Delete existing trainer assignments for these modules
-                    await supabase
-                      .from("module_trainers")
-                      .delete()
-                      .in("module_id", allModuleIds);
-
-                    // Insert new assignments for each selected trainer and module
-                    const insertData = [];
-                    for (const trainerId of selectedCourseTrainers) {
-                      const trainer = trainers.find(t => t.id === trainerId);
-                      if (!trainer) continue;
-                      
-                      for (const moduleId of allModuleIds) {
-                        insertData.push({
-                          module_id: moduleId,
-                          trainer_id: trainerId,
-                          trainer_name: trainer.full_name
-                        });
-                      }
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCourseTrainerDlgOpen(false)}
+                  className="px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-[#44474e] hover:bg-white border border-transparent hover:border-[rgba(15,32,60,0.08)] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!selectedCourseForTrainer || selectedCourseTrainers.length === 0 || selectedModulesForCourse.size === 0) {
+                      toast.error("Please select both trainers and modules");
+                      return;
                     }
+                    
+                    try {
+                      const moduleIds = Array.from(selectedModulesForCourse);
 
-                    if (insertData.length > 0) {
-                      const { error } = await supabase
+                      // Delete existing trainer assignments for selected modules
+                      await supabase
                         .from("module_trainers")
-                        .insert(insertData);
-                      
-                      if (error) throw error;
-                    }
+                        .delete()
+                        .in("module_id", moduleIds);
 
-                    toast.success(`Trainers assigned to all modules in ${selectedCourseForTrainer.name}`);
-                    await loadVaultData();
-                    setCourseTrainerDlgOpen(false);
-                    setSelectedCourseTrainers([]);
-                    setCourseTrainerSearch("");
-                  } catch (err: any) {
-                    toast.error(err.message || "Failed to assign trainers");
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf] shadow-[0_1px_2px_rgba(13,37,67,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]"
-              >
-                <UserPlus className="size-3.5" />
-                Assign to All Modules
-              </button>
+                      // Insert new assignments
+                      const insertData = [];
+                      for (const trainerId of selectedCourseTrainers) {
+                        const trainer = trainers.find(t => t.id === trainerId);
+                        if (!trainer) continue;
+                        
+                        for (const moduleId of moduleIds) {
+                          insertData.push({
+                            module_id: moduleId,
+                            trainer_id: trainerId,
+                            trainer_name: trainer.full_name
+                          });
+                        }
+                      }
+
+                      if (insertData.length > 0) {
+                        const { error } = await supabase
+                          .from("module_trainers")
+                          .insert(insertData);
+                        
+                        if (error) throw error;
+                      }
+
+                      toast.success(`Assigned ${selectedCourseTrainers.length} trainer(s) to ${moduleIds.length} module(s)`);
+                      await loadVaultData();
+                      setCourseTrainerDlgOpen(false);
+                      setSelectedCourseTrainers([]);
+                      setSelectedModulesForCourse(new Set());
+                      setExpandedSubjectsInDialog(new Set());
+                      setCourseTrainerSearch("");
+                    } catch (err: any) {
+                      toast.error(err.message || "Failed to assign trainers");
+                    }
+                  }}
+                  disabled={selectedCourseTrainers.length === 0 || selectedModulesForCourse.size === 0}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-['Inter'] font-semibold text-sm text-white bg-[#0d2543] hover:bg-[#0a1d36] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#4493bf] shadow-[0_1px_2px_rgba(13,37,67,0.25),inset_0_1px_0_rgba(255,255,255,0.1)]"
+                >
+                  <UserPlus className="size-3.5" />
+                  Assign Selected
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {assignOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(13,37,67,0.45)] backdrop-blur-sm p-6"
           onClick={() => setAssignOpen(false)}
