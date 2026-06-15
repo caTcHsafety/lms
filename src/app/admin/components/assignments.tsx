@@ -40,7 +40,7 @@ type Assignment = {
   dueDate: string;
   createdAt: string;
   files: { name: string; size: number; url: string }[];
-  status: "Draft" | "Published";
+  status: "Draft" | "Published" | "Saved";
 };
 
 function formatBytes(b: number) {
@@ -69,11 +69,16 @@ export function AssignmentsView() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "Draft" | "Published">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Draft" | "Published" | "Saved">("all");
+
+  // Clear/Archive functionality
+  const [clearMode, setClearMode] = useState(false);
+  const [selectedForClear, setSelectedForClear] = useState<Set<string>>(new Set());
 
   // Upload dialog state
   const [uploadOpen, setUploadOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitType, setSubmitType] = useState<"Draft" | "Published" | "Saved" | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
   const [draftDue, setDraftDue] = useState("");
@@ -81,6 +86,15 @@ export function AssignmentsView() {
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [cohortMenuOpen, setCohortMenuOpen] = useState(false);
+
+  // Assign saved assignments to cohorts
+  const [assignMode, setAssignMode] = useState(false);
+  const [selectedForAssign, setSelectedForAssign] = useState<Set<string>>(new Set());
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assignCohorts, setAssignCohorts] = useState<string[]>([]);
+  const [assignDueDate, setAssignDueDate] = useState("");
+  const [assignCohortMenuOpen, setAssignCohortMenuOpen] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   // DOCX block editor state
   const [draftBlockJson, setDraftBlockJson] = useState<any[] | null>(null);
@@ -116,7 +130,7 @@ export function AssignmentsView() {
       }));
       setStudents(parsedStudents);
 
-      // 2. Fetch assignments
+      // 2. Fetch assignments (exclude archived)
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from("assignments")
         .select(`
@@ -124,6 +138,7 @@ export function AssignmentsView() {
           assignment_cohorts(cohort_id),
           assignment_files(file_name, file_size_bytes, file_url)
         `)
+        .eq("is_archived", false)
         .order("created_at", { ascending: false });
       if (assignmentsError) console.error("Assignments Fetch Error:", assignmentsError);
 
@@ -139,7 +154,7 @@ export function AssignmentsView() {
           size: f.file_size_bytes,
           url: f.file_url,
         })),
-        status: (a.status?.toLowerCase() === "published") ? "Published" : "Draft",
+        status: a.status?.toLowerCase() === "published" ? "Published" : a.status?.toLowerCase() === "saved" ? "Saved" : "Draft",
       }));
       
       setAssignments(parsedAssignments);
@@ -160,7 +175,10 @@ export function AssignmentsView() {
 
   const filtered = useMemo(() => {
     return assignments.filter((a) => {
-      if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      if (statusFilter === "Saved" && a.status !== "Saved") return false;
+      if (statusFilter === "Published" && a.status !== "Published") return false;
+      if (statusFilter === "Draft" && a.status !== "Draft") return false;
+      if (statusFilter === "all" && a.status === "Saved") return false; // Don't show saved in "all"
       if (search.trim() && !a.title.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
@@ -214,10 +232,13 @@ export function AssignmentsView() {
     setDraftCohorts((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
 
   const canSubmit = draftTitle.trim().length > 0 && draftCohorts.length > 0 && !isSubmitting;
+  const canSave = draftTitle.trim().length > 0 && !isSubmitting; // Saved assignments don't require cohorts
 
-  const submitAssignment = async (status: "Draft" | "Published") => {
-    if (!canSubmit) return;
+  const submitAssignment = async (status: "Draft" | "Published" | "Saved") => {
+    if (status === "Saved" && !canSave) return;
+    if (status !== "Saved" && !canSubmit) return;
     setIsSubmitting(true);
+    setSubmitType(status);
     try {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
@@ -280,6 +301,7 @@ export function AssignmentsView() {
       alert("Failed to create assignment");
     } finally {
       setIsSubmitting(false);
+      setSubmitType(null);
     }
   };
 
@@ -302,6 +324,40 @@ export function AssignmentsView() {
     }
   };
 
+  const archiveAssignments = async () => {
+    if (selectedForClear.size === 0) {
+      alert("Please select assignments to clear");
+      return;
+    }
+    
+    if (!confirm(`Clear ${selectedForClear.size} assignment(s) from view? They'll be archived but all data will remain in the system.`)) {
+      return;
+    }
+
+    try {
+      const idsToArchive = Array.from(selectedForClear);
+      const { error } = await supabase
+        .from("assignments")
+        .update({ is_archived: true })
+        .in("id", idsToArchive);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setAssignments((prev) => prev.filter((a) => !idsToArchive.includes(a.id)));
+      
+      // Reset selection
+      setSelectedForClear(new Set());
+      setClearMode(false);
+      if (idsToArchive.includes(selectedId || "")) {
+        setSelectedId(null);
+      }
+    } catch (err: any) {
+      console.error("Failed to archive assignments:", err);
+      alert("Failed to clear assignments: " + (err.message || "Unknown error"));
+    }
+  };
+
   const publishAssignment = async (id: string) => {
     try {
       const { error } = await supabase
@@ -313,6 +369,85 @@ export function AssignmentsView() {
     } catch (err) {
       console.error("Failed to publish assignment:", err);
       alert("Failed to publish assignment");
+    }
+  };
+
+  const assignSavedAssignments = async () => {
+    if (selectedForAssign.size === 0 || assignCohorts.length === 0) {
+      alert("Please select assignments and cohorts");
+      return;
+    }
+    
+    setIsAssigning(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      
+      const assignmentsToAssign = Array.from(selectedForAssign);
+      
+      for (const assignId of assignmentsToAssign) {
+        // Fetch the full original assignment including block_json and docx_storage_path
+        const { data: originalData, error: fetchErr } = await supabase
+          .from("assignments")
+          .select("*")
+          .eq("id", assignId)
+          .single();
+        
+        if (fetchErr || !originalData) {
+          console.error("Failed to fetch original assignment:", fetchErr);
+          continue;
+        }
+        
+        // Create a new assignment based on the saved template with all data
+        const { data: newAssign, error: aErr } = await supabase.from("assignments").insert({
+          title: originalData.title,
+          description: originalData.description,
+          due_date: assignDueDate || null, // Use the due date from assign dialog
+          status: "Published",
+          created_by: userId,
+          block_json: originalData.block_json, // Preserve DOCX blocks for interactive answers
+          docx_storage_path: originalData.docx_storage_path, // Preserve DOCX file path
+        }).select().single();
+        
+        if (aErr) throw aErr;
+        const newAssignId = newAssign.id;
+        
+        // Assign to selected cohorts
+        const cohortInserts = assignCohorts.map(cId => ({ assignment_id: newAssignId, cohort_id: cId }));
+        const { error: acErr } = await supabase.from("assignment_cohorts").insert(cohortInserts);
+        if (acErr) throw acErr;
+        
+        // Copy files - fetch from assignment_files table
+        const { data: originalFiles, error: filesErr } = await supabase
+          .from("assignment_files")
+          .select("*")
+          .eq("assignment_id", assignId);
+        
+        if (!filesErr && originalFiles && originalFiles.length > 0) {
+          for (const file of originalFiles) {
+            const { error: fileInsertError } = await supabase.from("assignment_files").insert({
+              assignment_id: newAssignId,
+              file_name: file.file_name,
+              file_size_bytes: file.file_size_bytes,
+              file_url: file.file_url
+            });
+            if (fileInsertError) throw fileInsertError;
+          }
+        }
+      }
+      
+      await fetchData();
+      setAssignDialogOpen(false);
+      setSelectedForAssign(new Set());
+      setAssignCohorts([]);
+      setAssignDueDate("");
+      setAssignMode(false);
+      alert(`Successfully assigned ${assignmentsToAssign.length} assignment(s) to ${assignCohorts.length} cohort(s)`);
+    } catch (err) {
+      console.error("Failed to assign assignments:", err);
+      alert("Failed to assign assignments");
+    } finally {
+      setIsAssigning(false);
     }
   };
 
@@ -359,13 +494,76 @@ export function AssignmentsView() {
               <h1 className="font-['Inter'] font-semibold text-[#0d2543]" style={{ fontSize: 18 }}>Assignments</h1>
               <p className="font-['Inter'] text-sm text-[#74777E] mt-0.5">{assignments.length} total · assigned by cohort</p>
             </div>
-            <button
-              onClick={openUpload}
-              className="bg-[#0d2543] hover:bg-[#0a1d33] active:bg-[#071628] text-white px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#0d2543] focus:ring-offset-2"
-            >
-              <Plus className="size-3.5" />
-              New
-            </button>
+            <div className="flex items-center gap-2">
+              {clearMode ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setClearMode(false);
+                      setSelectedForClear(new Set());
+                    }}
+                    className="bg-white border border-[#c4c6ce] hover:bg-[#f3f3f5] text-[#44474e] px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                  >
+                    <X className="size-3.5" />
+                    Cancel
+                  </button>
+                  <button
+                    onClick={archiveAssignments}
+                    disabled={selectedForClear.size === 0}
+                    className="bg-[#0d2543] hover:bg-[#0a1d33] active:bg-[#071628] text-white px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#0d2543] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle2 className="size-3.5" />
+                    Clear ({selectedForClear.size})
+                  </button>
+                </>
+              ) : assignMode ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setAssignMode(false);
+                      setSelectedForAssign(new Set());
+                    }}
+                    className="bg-white border border-[#c4c6ce] hover:bg-[#f3f3f5] text-[#44474e] px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                  >
+                    <X className="size-3.5" />
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setAssignDialogOpen(true)}
+                    disabled={selectedForAssign.size === 0}
+                    className="bg-[#00658d] hover:bg-[#004d6d] active:bg-[#003d56] text-white px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#00658d] disabled:bg-[#c4c6ce] disabled:cursor-not-allowed"
+                  >
+                    <Users className="size-3.5" />
+                    Assign ({selectedForAssign.size})
+                  </button>
+                </>
+              ) : (
+                <>
+                  {statusFilter === "Saved" && (
+                    <button
+                      onClick={() => setAssignMode(true)}
+                      className="bg-[#00658d] hover:bg-[#004d6d] active:bg-[#003d56] text-white px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#00658d] focus:ring-offset-2"
+                    >
+                      <Users className="size-3.5" />
+                      Assign
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setClearMode(true)}
+                    className="bg-white border border-[#c4c6ce] hover:bg-[#f3f3f5] text-[#44474e] px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={openUpload}
+                    className="bg-[#0d2543] hover:bg-[#0a1d33] active:bg-[#071628] text-white px-3 py-1.5 rounded-md font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#0d2543] focus:ring-offset-2"
+                  >
+                    <Plus className="size-3.5" />
+                    New
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="relative">
@@ -378,12 +576,12 @@ export function AssignmentsView() {
             />
           </div>
 
-          <div className="flex gap-1 mt-3">
-            {(["all", "Published", "Draft"] as const).map((s) => (
+          <div className="flex gap-1.5 mt-3">
+            {(["all", "Published", "Draft", "Saved"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`px-2.5 py-1 rounded-full font-['Inter'] font-semibold text-[11px] tracking-[0.3px] transition-colors duration-150 ${
+                className={`px-3.5 py-1.5 rounded-full font-['Inter'] font-semibold text-xs tracking-[0.3px] transition-colors duration-150 ${
                   statusFilter === s
                     ? "bg-[#0d2543] text-white"
                     : "bg-[#F1F4F8] text-[#44474e] hover:bg-[#e6eaf0]"
@@ -402,38 +600,96 @@ export function AssignmentsView() {
             <ul className="px-2 pb-4">
               {filtered.map((a) => {
                 const isSel = selected?.id === a.id;
+                const isClearChecked = selectedForClear.has(a.id);
+                const isAssignChecked = selectedForAssign.has(a.id);
                 const cohortNames = cohorts.filter((c) => a.cohortIds.includes(c.id))
                   .map((c) => c.name)
                   .join(", ");
                 return (
                   <li key={a.id}>
                     <button
-                      onClick={() => setSelectedId(a.id)}
+                      onClick={() => {
+                        if (clearMode) {
+                          setSelectedForClear((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(a.id)) {
+                              next.delete(a.id);
+                            } else {
+                              next.add(a.id);
+                            }
+                            return next;
+                          });
+                        } else if (assignMode) {
+                          setSelectedForAssign((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(a.id)) {
+                              next.delete(a.id);
+                            } else {
+                              next.add(a.id);
+                            }
+                            return next;
+                          });
+                        } else {
+                          setSelectedId(a.id);
+                        }
+                      }}
                       className={`w-full text-left px-3 py-3 rounded-lg mb-1 transition-colors duration-100 group ${
-                        isSel
+                        clearMode
+                          ? isClearChecked
+                            ? "bg-[rgba(0,101,141,0.10)] border-l-[3px] border-[#00658d] pl-[9px]"
+                            : "hover:bg-[#F7F9FC] border-l-[3px] border-transparent pl-[9px]"
+                          : assignMode
+                          ? isAssignChecked
+                            ? "bg-[rgba(0,101,141,0.10)] border-l-[3px] border-[#00658d] pl-[9px]"
+                            : "hover:bg-[#F7F9FC] border-l-[3px] border-transparent pl-[9px]"
+                          : isSel
                           ? "bg-[rgba(0,101,141,0.10)] border-l-[3px] border-[#00658d] pl-[9px]"
                           : "hover:bg-[#F7F9FC] border-l-[3px] border-transparent pl-[9px]"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="font-['Inter'] font-semibold text-sm text-[#0d2543] line-clamp-1 flex-1">{a.title}</span>
+                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                          {(clearMode || assignMode) && (
+                            <div className="mt-0.5">
+                              <input
+                                type="checkbox"
+                                checked={clearMode ? isClearChecked : isAssignChecked}
+                                onChange={() => {}}
+                                className="size-4 rounded border-[#c4c6ce] text-[#0d2543] focus:ring-[#4493bf] focus:ring-offset-0 cursor-pointer"
+                              />
+                            </div>
+                          )}
+                          <span className="font-['Inter'] font-semibold text-sm text-[#0d2543] line-clamp-1 flex-1">{a.title}</span>
+                        </div>
                         <span
                           className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-['Inter'] font-semibold text-[10px] tracking-[0.3px] ${
                             a.status?.toLowerCase() === "published"
                               ? "bg-[#E6F1E9] text-[#1E5631]"
+                              : a.status?.toLowerCase() === "saved"
+                              ? "bg-[#E6F4FF] text-[#004D99]"
                               : "bg-[#FFF3D6] text-[#A56A00]"
                           }`}
                         >
-                          {a.status?.toLowerCase() === "published" ? <CheckCircle2 className="size-2.5" /> : <Clock className="size-2.5" />}
+                          {a.status?.toLowerCase() === "published" ? (
+                            <CheckCircle2 className="size-2.5" />
+                          ) : a.status?.toLowerCase() === "saved" ? (
+                            <FileText className="size-2.5" />
+                          ) : (
+                            <Clock className="size-2.5" />
+                          )}
                           {a.status}
                         </span>
                       </div>
-                      <div className="mt-1 font-['Inter'] text-sm text-[#74777E] line-clamp-1">{cohortNames || "No cohorts"}</div>
-                      <div className="mt-1 flex items-center gap-3 font-['Inter'] text-sm text-[#9aa0a6]">
-                        <span className="inline-flex items-center gap-1">
-                          <Calendar className="size-3" />
-                          {a.dueDate ? `Due ${formatDate(a.dueDate)}` : "No due date"}
-                        </span>
+                      <div className="mt-1 font-['Inter'] text-sm text-[#74777E] line-clamp-1" style={{ marginLeft: (clearMode || assignMode) ? "24px" : "0" }}>
+                        {a.status === "Saved" ? "Template · Not assigned yet" : (cohortNames || "No cohorts")}
+                      </div>
+                      <div className="mt-1 flex items-center gap-3 font-['Inter'] text-sm text-[#9aa0a6]" style={{ marginLeft: (clearMode || assignMode) ? "24px" : "0" }}>
+                        {a.status !== "Saved" && (
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="size-3" />
+                            {a.dueDate ? `Due ${formatDate(a.dueDate)}` : "No due date"}
+                          </span>
+                        )}
                         <span className="inline-flex items-center gap-1">
                           <FileText className="size-3" />
                           {a.files.length}
@@ -680,7 +936,7 @@ export function AssignmentsView() {
               </button>
             </div>
 
-            <div className={`flex-1 px-6 py-4 space-y-4 [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full ${cohortMenuOpen ? "overflow-visible" : "overflow-auto"}`}>
+            <div className="flex-1 px-6 py-4 space-y-4 overflow-auto [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full">
               <div>
                 <label className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#74777E] block mb-1.5">Title</label>
                 <input
@@ -719,7 +975,10 @@ export function AssignmentsView() {
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setCohortMenuOpen((o) => !o)}
+                      id="cohort-select-button"
+                      onClick={(e) => {
+                        setCohortMenuOpen((o) => !o);
+                      }}
                       className="w-full h-10 flex items-center justify-between gap-2 px-3 bg-white border border-[rgba(13,37,67,0.15)] rounded-md font-['Inter'] text-sm text-[#0d2543] hover:border-[#00658d] focus:outline-none focus:border-[#00658d] focus:ring-2 focus:ring-[rgba(0,101,141,0.15)] transition-all duration-150 min-w-0"
                     >
                       <span className="truncate flex-1 text-left min-w-0">
@@ -734,7 +993,7 @@ export function AssignmentsView() {
                     {cohortMenuOpen && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setCohortMenuOpen(false)} />
-                        <div className="absolute z-50 w-full max-h-48 overflow-y-auto bg-white border rounded-md shadow-md thin-white-scrollbar py-1">
+                        <div className="absolute z-50 left-0 right-0 top-[calc(100%+4px)] max-h-48 overflow-y-auto bg-white border border-[rgba(13,37,67,0.15)] rounded-md shadow-lg [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full py-1">
                           {cohorts.map((c) => {
                             const checked = draftCohorts.includes(c.id);
                             return (
@@ -880,20 +1139,219 @@ export function AssignmentsView() {
                 Cancel
               </button>
               <button
+                onClick={() => submitAssignment("Saved")}
+                disabled={!canSave || isSubmitting}
+                className="px-3.5 py-1.5 rounded-md font-['Inter'] font-semibold text-sm border border-[rgba(0,101,141,0.25)] text-[#00658d] hover:bg-[rgba(0,101,141,0.05)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 flex items-center gap-2"
+              >
+                {isSubmitting && submitType === "Saved" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <FileText className="size-3.5" />
+                )}
+                Save as Template
+              </button>
+              <button
                 onClick={() => submitAssignment("Draft")}
-                disabled={!canSubmit}
+                disabled={!canSubmit || isSubmitting}
                 className="px-3.5 py-1.5 rounded-md font-['Inter'] font-semibold text-sm border border-[rgba(13,37,67,0.15)] text-[#0d2543] hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 flex items-center gap-2"
               >
-                {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                {isSubmitting && submitType === "Draft" && <Loader2 className="size-4 animate-spin" />}
                 Save as Draft
               </button>
               <button
                 onClick={() => submitAssignment("Published")}
-                disabled={!canSubmit}
+                disabled={!canSubmit || isSubmitting}
                 className="px-3.5 py-1.5 rounded-md font-['Inter'] font-semibold text-sm bg-[#0d2543] text-white hover:bg-[#0a1d33] disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 flex items-center gap-2"
               >
-                {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                {isSubmitting && submitType === "Published" && <Loader2 className="size-4 animate-spin" />}
                 Publish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Saved Templates to Cohorts Dialog */}
+      {assignDialogOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(13,37,67,0.45)] backdrop-blur-sm p-6"
+          onClick={() => setAssignDialogOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-[0_24px_48px_-12px_rgba(13,37,67,0.35)] w-full max-w-[540px] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between px-6 pt-5 pb-3 border-b border-[rgba(13,37,67,0.07)]">
+              <div>
+                <h2 className="font-['Inter'] font-semibold text-[#0d2543]" style={{ fontSize: 18 }}>
+                  Assign to Cohorts
+                </h2>
+                <p className="font-['Inter'] text-sm text-[#74777E] mt-0.5">
+                  Select cohorts to receive {selectedForAssign.size === 1 ? 'this assignment' : `these ${selectedForAssign.size} assignments`}
+                </p>
+              </div>
+              <button
+                onClick={() => setAssignDialogOpen(false)}
+                className="text-[#74777E] hover:text-[#0d2543] p-1 rounded-md hover:bg-[#F1F4F8] transition-colors duration-150"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {/* Selected assignments preview */}
+              <div className="bg-[#F7F9FC] rounded-lg border border-[rgba(13,37,67,0.05)] p-3">
+                <div className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#74777E] mb-2">
+                  Selected Templates ({selectedForAssign.size})
+                </div>
+                <div className="space-y-1">
+                  {Array.from(selectedForAssign).slice(0, 3).map(id => {
+                    const assignment = assignments.find(a => a.id === id);
+                    return assignment ? (
+                      <div key={id} className="flex items-center gap-2 text-sm">
+                        <FileText className="size-3.5 text-[#00658d] shrink-0" />
+                        <span className="font-['Inter'] font-medium text-[#0d2543] truncate">{assignment.title}</span>
+                      </div>
+                    ) : null;
+                  })}
+                  {selectedForAssign.size > 3 && (
+                    <div className="text-xs text-[#74777E] font-['Inter'] pl-5">
+                      +{selectedForAssign.size - 3} more
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Cohort selector */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#74777E] block mb-1.5">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={assignDueDate}
+                    onChange={(e) => setAssignDueDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[rgba(13,37,67,0.15)] rounded-md font-['Inter'] text-sm text-[#0d2543] focus:outline-none focus:border-[#00658d] focus:ring-2 focus:ring-[rgba(0,101,141,0.15)] transition-all duration-150"
+                  />
+                </div>
+                <div>
+                  <label className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#74777E] block mb-1.5">
+                    Select Cohorts ({assignCohorts.length})
+                  </label>
+                  <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setAssignCohortMenuOpen((o) => !o)}
+                    className="w-full h-10 flex items-center justify-between gap-2 px-3 bg-white border border-[rgba(13,37,67,0.15)] rounded-md font-['Inter'] text-sm text-[#0d2543] hover:border-[#00658d] focus:outline-none focus:border-[#00658d] focus:ring-2 focus:ring-[rgba(0,101,141,0.15)] transition-all duration-150"
+                  >
+                    <span className="truncate flex-1 text-left">
+                      {assignCohorts.length === 0
+                        ? "Select cohorts…"
+                        : assignCohorts.length === 1
+                        ? cohorts.find((c) => c.id === assignCohorts[0])?.name
+                        : `${assignCohorts.length} cohorts selected`}
+                    </span>
+                    <ChevronDown className="size-3.5 text-[#74777E] shrink-0" />
+                  </button>
+                  {assignCohortMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setAssignCohortMenuOpen(false)} />
+                      <div className="absolute z-50 left-0 right-0 top-[calc(100%+4px)] max-h-56 overflow-y-auto bg-white border border-[rgba(13,37,67,0.15)] rounded-md shadow-lg [scrollbar-width:thin] [scrollbar-color:#c4c6ce_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#c4c6ce] [&::-webkit-scrollbar-thumb]:rounded-full py-1">
+                        {cohorts.map((c) => {
+                          const checked = assignCohorts.includes(c.id);
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setAssignCohorts((prev) =>
+                                  prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                                );
+                              }}
+                              className="w-full h-10 flex items-center gap-2 px-3 hover:bg-[#F1F4F8] focus:outline-none focus-visible:bg-[#F1F4F8] transition-colors duration-100 text-left"
+                            >
+                              <span
+                                className={`size-4 rounded border flex items-center justify-center shrink-0 ${
+                                  checked
+                                    ? "bg-[#00658d] border-[#00658d]"
+                                    : "bg-white border-[rgba(13,37,67,0.25)]"
+                                }`}
+                              >
+                                {checked && (
+                                  <svg viewBox="0 0 12 12" className="size-3 text-white block">
+                                    <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-['Inter'] font-semibold text-sm text-[#0d2543] truncate">{c.name}</div>
+                                <div className="font-['Inter'] text-xs text-[#74777E]">{c.studentCount} students</div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected cohorts preview */}
+              {assignCohorts.length > 0 && (
+                <div className="bg-[rgba(0,101,141,0.05)] rounded-lg border border-[rgba(0,101,141,0.10)] p-3">
+                  <div className="font-['Inter'] font-semibold text-xs uppercase tracking-[0.5px] text-[#00658d] mb-2">
+                    Will be assigned to {students.filter((s) => assignCohorts.includes(s.cohortId)).length} student(s)
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {cohorts.filter((c) => assignCohorts.includes(c.id)).map((c) => (
+                      <span
+                        key={c.id}
+                        className="inline-flex items-center gap-1.5 bg-white border border-[rgba(0,101,141,0.20)] rounded-full px-2.5 py-1 font-['Inter'] text-xs text-[#0d2543]"
+                      >
+                        <GraduationCap className="size-3 text-[#00658d]" />
+                        {c.name}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssignCohorts((prev) => prev.filter((id) => id !== c.id));
+                          }}
+                          className="text-[#74777E] hover:text-[#9F2A1C] ml-0.5"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[rgba(13,37,67,0.07)] bg-[#F7F9FC]">
+              <button
+                onClick={() => setAssignDialogOpen(false)}
+                disabled={isAssigning}
+                className="px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm text-[#44474e] hover:bg-[#e6eaf0] transition-colors duration-150 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={assignSavedAssignments}
+                disabled={assignCohorts.length === 0 || isAssigning}
+                className="px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm bg-[#00658d] text-white hover:bg-[#004d6d] disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150 flex items-center gap-2"
+              >
+                {isAssigning ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="size-4" />
+                    Assign to Cohorts
+                  </>
+                )}
               </button>
             </div>
           </div>

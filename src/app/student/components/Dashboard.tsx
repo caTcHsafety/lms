@@ -22,6 +22,7 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
   const [recentFeedback, setRecentFeedback] = useState<{ id: string; assignmentId: string; title: string; feedback: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState<string>("");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   // Real-time offline status tracker
   const [isOnline, setIsOnline] = useState(true); // Start as true to avoid flash
@@ -271,7 +272,7 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
           .in("status", ["published", "Published"]);
         if (assignError) console.error("Supabase Error [assignments]:", assignError.message, assignError.details, assignError.hint);
 
-        const { data: subs } = await supabase.from("submissions").select("assignment_id").eq("student_id", user.id);
+        const { data: subs } = await supabase.from("submissions").select("assignment_id").eq("student_id", user.id).not("submitted_at", "is", null);
         const submittedIds = new Set(subs?.map((s) => s.assignment_id) || []);
 
         const pending: any[] = [];
@@ -362,7 +363,28 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
       }
     })();
     return () => { isMounted = false; };
-  }, [user]);
+  }, [user, refreshTrigger]);
+  
+  // Force refresh when component becomes visible or mounts
+  useEffect(() => {
+    // Refresh on every mount (when navigating back to dashboard)
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
+  
+  // Also refresh when tab becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        setRefreshTrigger(prev => prev + 1);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   if (!navigator.onLine && (!courses || courses.length === 0)) {
     return <div className="p-8 text-center text-gray-500">You are offline. Please reconnect to view this content.</div>;
