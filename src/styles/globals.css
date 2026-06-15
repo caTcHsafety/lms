@@ -54,6 +54,29 @@
   background: rgba(0, 0, 0, 0.28) !important;
 }
 
+/* ─── Pointer cursor for all interactive elements ──────────────────────────
+   Makes all buttons and clickable elements show hand cursor on hover
+   ─────────────────────────────────────────────────────────────────────────── */
+button,
+[role="button"],
+[type="button"],
+[type="submit"],
+[type="reset"],
+a,
+select,
+label[for],
+input[type="checkbox"],
+input[type="radio"],
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+/* Keep default cursor for disabled elements */
+button:disabled,
+[disabled] {
+  cursor: not-allowed !important;
+}
+
 /* ─── Utility: light thumb for dark backgrounds ──────────────────────────── */
 .thin-scrollbar-light,
 .thin-white-scrollbar {
