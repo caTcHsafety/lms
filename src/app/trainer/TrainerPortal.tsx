@@ -78,12 +78,14 @@ export default function App() {
           { data: profileData },
           { data: coursesData },
           { data: modulesData },
+          { data: subjectsData },
           { data: broadcastsData },
         ] = await Promise.race([
           Promise.all([
             supabase.from("profiles").select("full_name").eq("id", user.id).single(),
             supabase.from("courses").select("*").eq("is_active", true),
             supabase.from("modules").select(`*, module_versions (*)`).order("order_index"),
+            supabase.from("subjects").select("*"),
             supabase.from("broadcasts").select(`
               *,
               published_by_profile:profiles!broadcasts_published_by_fkey ( full_name ),
@@ -174,6 +176,7 @@ export default function App() {
           }
 
           const parentCourse = coursesData?.find((c) => c.id === mod.course_id);
+          const parentSubject = subjectsData?.find((s) => s.id === mod.subject_id);
 
           return {
             id: mod.id,
@@ -181,6 +184,8 @@ export default function App() {
             title: mod.title,
             program: parentCourse?.title || "Unknown Program",
             subject: parentCourse?.description || "General",
+            subject_id: mod.subject_id,
+            subject_name: parentSubject?.name || "General",
             versions: versions.sort((a, b) => b.version.localeCompare(a.version)),
             isIspring: mod.type === "SCORM",
             ispringUrl: mod.module_versions?.[0]?.content_url,

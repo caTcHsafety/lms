@@ -3,6 +3,7 @@ import {
   Search,
   Play,
   ChevronDown,
+  ChevronRight,
   Clock,
   Package,
   FileText,
@@ -13,6 +14,8 @@ import {
   X,
   PlayCircle,
   Maximize2,
+  Folder,
+  FolderOpen,
 } from "lucide-react";
 import type { Deck, TrainerKit, Video, Document } from "../data";
 import { OfflineDownloadButton } from "@/components/OfflineDownloadButton";
@@ -28,12 +31,14 @@ type Tab = "slides" | "videos" | "documents";
 export function ContentVault({ decks, kits, onLaunch }: Props) {
   const [activeCourse, setActiveCourse] = useState(kits[0]?.courseCode ?? "");
   const [query, setQuery] = useState("");
+  const [deckSearchQuery, setDeckSearchQuery] = useState("");
   const [tab, setTab] = useState<Tab>("slides");
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<Record<string, string>>(
     () => Object.fromEntries(decks.map((d) => [d.id, d.versions[0].version])),
   );
+  const [collapsedSubjects, setCollapsedSubjects] = useState<Record<string, boolean>>({});
 
   const filteredKits = useMemo(
     () =>
@@ -52,8 +57,52 @@ export function ContentVault({ decks, kits, onLaunch }: Props) {
     ? (kit.deckIds.map((id) => decks.find((d) => d.id === id)).filter(Boolean) as Deck[])
     : [];
 
+  // Group decks by subject_name with search filtering
+  const decksBySubject = useMemo(() => {
+    const grouped: Record<string, Deck[]> = {};
+    kitDecks.forEach((deck) => {
+      // Filter by search query
+      if (
+        deckSearchQuery &&
+        !deck.title.toLowerCase().includes(deckSearchQuery.toLowerCase()) &&
+        !deck.code.toLowerCase().includes(deckSearchQuery.toLowerCase())
+      ) {
+        return;
+      }
+
+      const subject = deck.subject_name || "General";
+      if (!grouped[subject]) {
+        grouped[subject] = [];
+      }
+      grouped[subject].push(deck);
+    });
+    return grouped;
+  }, [kitDecks, deckSearchQuery]);
+
+  // Toggle folder
+  const toggleFolder = (subject: string) => {
+    setCollapsedSubjects((prev) => ({
+      ...prev,
+      [subject]: !prev[subject],
+    }));
+  };
+
+  // Expand all
+  const expandAll = () => {
+    setCollapsedSubjects(
+      Object.fromEntries(Object.keys(decksBySubject).map((s) => [s, false]))
+    );
+  };
+
+  // Collapse all
+  const collapseAll = () => {
+    setCollapsedSubjects(
+      Object.fromEntries(Object.keys(decksBySubject).map((s) => [s, true]))
+    );
+  };
+
   return (
-    <div className="mx-auto max-w-[1280px] px-10 py-8">
+    <div className="mx-auto max-w-[1440px] px-10 py-8">
       <style>{`
         .vault-rail-scroll {
           scrollbar-width: thin;
@@ -81,7 +130,7 @@ export function ContentVault({ decks, kits, onLaunch }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-[320px_1fr] gap-6">
+      <div className="grid grid-cols-[280px_1fr] gap-8">
         {/* Left rail — assigned kits */}
         <aside
           className="bg-white border border-[#e9ebef] rounded-xl overflow-hidden sticky top-6 flex flex-col vault-rail"
@@ -238,24 +287,117 @@ export function ContentVault({ decks, kits, onLaunch }: Props) {
                 />
               </div>
 
-              <div className="mt-6">
-                {tab === "slides" && (
-                  <div className="grid grid-cols-2 gap-4">
-                    {kitDecks.map((d) => (
-                      <DeckCard
-                        key={d.id}
-                        deck={d}
-                        selected={selectedVersion[d.id]}
-                        onChangeVersion={(v) =>
-                          setSelectedVersion((s) => ({ ...s, [d.id]: v }))
-                        }
-                        onLaunch={() => onLaunch(d.id, selectedVersion[d.id])}
-                      />
-                    ))}
-                    {kitDecks.length === 0 && (
-                      <EmptyState text="No slide decks in this kit yet." />
+              {/* Search bar for slides */}
+              {tab === "slides" && kitDecks.length > 0 && (
+                <div className="mt-5 mb-4">
+                  <div className="relative max-w-md">
+                    <Search
+                      size={16}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#717182]"
+                    />
+                    <input
+                      type="text"
+                      value={deckSearchQuery}
+                      onChange={(e) => setDeckSearchQuery(e.target.value)}
+                      placeholder="Search presentations by name or code..."
+                      className="w-full h-10 pl-10 pr-4 rounded-lg bg-[#f3f3f5] border border-[#e9ebef] text-sm text-[#0d2543] placeholder:text-[#717182] outline-none focus:border-[#0d2543]/30 focus:bg-white transition-all"
+                    />
+                    {deckSearchQuery && (
+                      <button
+                        onClick={() => setDeckSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#717182] hover:text-[#0d2543] transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
                     )}
                   </div>
+                </div>
+              )}
+
+              <div className="mt-6">
+                {tab === "slides" && (
+                  <>
+                    {Object.keys(decksBySubject).length > 0 && (
+                      <div className="flex items-center justify-end gap-3 mb-3 text-[12px] text-[#717182]">
+                        <button
+                          onClick={expandAll}
+                          className="hover:text-[#0d2543] transition-colors"
+                        >
+                          Expand all
+                        </button>
+                        <span className="opacity-40">·</span>
+                        <button
+                          onClick={collapseAll}
+                          className="hover:text-[#0d2543] transition-colors"
+                        >
+                          Collapse all
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      {Object.entries(decksBySubject).map(([subjectName, subjectDecks]) => {
+                        const isCollapsed = !!collapsedSubjects[subjectName];
+                        return (
+                          <section
+                            key={subjectName}
+                            className="bg-white/40 border border-[#e9ebef] rounded-xl"
+                          >
+                            <button
+                              onClick={() => toggleFolder(subjectName)}
+                              aria-expanded={!isCollapsed}
+                              className="w-full flex items-center gap-2 px-4 py-3 text-left text-[#717182] hover:bg-white/70 rounded-xl transition-colors"
+                            >
+                              <ChevronRight
+                                size={14}
+                                className={[
+                                  "transition-transform",
+                                  isCollapsed ? "" : "rotate-90",
+                                ].join(" ")}
+                              />
+                              {isCollapsed ? <Folder size={14} /> : <FolderOpen size={14} />}
+                              <h2 className="text-[12px] uppercase tracking-wide text-[#0d2543]">
+                                {subjectName}
+                              </h2>
+                              <span className="text-[12px]">· {subjectDecks.length}</span>
+                            </button>
+                            {!isCollapsed && (
+                              <div className="grid grid-cols-2 gap-5 px-5 pb-5 pt-2">
+                                {subjectDecks.map((d) => (
+                                  <DeckCard
+                                    key={d.id}
+                                    deck={d}
+                                    selected={selectedVersion[d.id]}
+                                    onChangeVersion={(v) =>
+                                      setSelectedVersion((s) => ({ ...s, [d.id]: v }))
+                                    }
+                                    onLaunch={() => onLaunch(d.id, selectedVersion[d.id])}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </section>
+                        );
+                      })}
+                      {Object.keys(decksBySubject).length === 0 && (
+                        <div className="text-center py-16 text-[#717182] text-sm">
+                          {deckSearchQuery ? (
+                            <>
+                              <p>No presentations match "{deckSearchQuery}"</p>
+                              <button
+                                onClick={() => setDeckSearchQuery("")}
+                                className="mt-3 text-[#0d2543] hover:underline text-sm"
+                              >
+                                Clear search
+                              </button>
+                            </>
+                          ) : (
+                            "No slide decks in this kit yet."
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {tab === "videos" && (
@@ -421,28 +563,28 @@ function DeckCard({
   const isLatest = selected === latest;
 
   return (
-    <div className="bg-white border border-[#e9ebef] rounded-xl p-5 hover:shadow-[0_8px_24px_rgba(13,37,67,0.08)] transition-shadow">
+    <div className="bg-white border border-[#e9ebef] rounded-xl p-6 hover:shadow-[0_8px_24px_rgba(13,37,67,0.08)] transition-shadow">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm text-[#717182]">{deck.code}</div>
-          <h3 className="mt-0.5 text-sm text-[#0d2543] leading-tight">{deck.title}</h3>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-[#717182] mb-1">{deck.code}</div>
+          <h3 className="text-[15px] text-[#0d2543] leading-snug font-medium">{deck.title}</h3>
         </div>
-        <span className="shrink-0 px-2 py-0.5 rounded bg-[#e9ebef] text-[#0d2543] text-xs tracking-wide uppercase">
+        <span className="shrink-0 px-2.5 py-1 rounded bg-[#e9ebef] text-[#0d2543] text-xs tracking-wide uppercase font-medium">
           Slides
         </span>
       </div>
 
-      <div className="mt-3 flex items-center gap-4 text-sm text-[#717182]">
+      <div className="mt-4 flex items-center gap-4 text-sm text-[#717182]">
         <span>{deck.versions.length} revision{deck.versions.length === 1 ? "" : "s"}</span>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-4 flex items-center gap-2">
         <label className="text-xs text-[#717182] tracking-wide uppercase">Version</label>
         <div className="relative">
           <select
             value={selected}
             onChange={(e) => onChangeVersion(e.target.value)}
-            className="appearance-none h-8 pl-3 pr-7 rounded-full bg-[#f3f3f5] border border-[#e9ebef] text-sm text-[#0d2543] outline-none focus:border-[#0d2543]/40 cursor-pointer"
+            className="appearance-none h-9 pl-3 pr-8 rounded-full bg-[#f3f3f5] border border-[#e9ebef] text-sm text-[#0d2543] outline-none focus:border-[#0d2543]/40 cursor-pointer"
           >
             {deck.versions.map((v) => (
               <option key={v.version} value={v.version}>
@@ -453,24 +595,24 @@ function DeckCard({
           </select>
           <ChevronDown
             size={12}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#717182] pointer-events-none"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#717182] pointer-events-none"
           />
         </div>
         {!isLatest && (
-          <span className="px-1.5 py-0.5 rounded bg-[#fff7d6] text-[#7a5a00] text-xs tracking-wide uppercase">
+          <span className="px-2 py-0.5 rounded bg-[#fff7d6] text-[#7a5a00] text-xs tracking-wide uppercase font-medium">
             Prior
           </span>
         )}
       </div>
 
-      <p className="mt-2 text-sm text-[#717182] line-clamp-1">Note: {selectedV.note}</p>
+      <p className="mt-3 text-sm text-[#717182] line-clamp-2 leading-relaxed">Note: {selectedV.note}</p>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-5 flex items-center gap-2">
         <button
           onClick={onLaunch}
-          className="flex-1 h-10 rounded-full bg-[#0d2543] text-white text-sm flex items-center justify-center gap-2 hover:bg-[#0d2543]/90"
+          className="flex-1 h-11 rounded-full bg-[#0d2543] text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-[#0d2543]/90 transition-colors"
         >
-          <Play size={13} fill="currentColor" /> Launch in Theater Mode
+          <Play size={14} fill="currentColor" /> Launch in Theater Mode
         </button>
         <OfflineDownloadButton
           moduleId={deck.id}

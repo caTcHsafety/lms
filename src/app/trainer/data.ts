@@ -20,6 +20,8 @@ export type Deck = {
   title: string;
   program: string;
   subject: string;
+  subject_id?: string;
+  subject_name?: string;
   slides: number;
   durationMin: number;
   versions: DeckVersion[];
