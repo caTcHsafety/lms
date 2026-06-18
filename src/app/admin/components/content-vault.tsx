@@ -104,7 +104,7 @@ export function ContentVaultRedesigned() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | ContentType>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | Status>("all");
-  const [sortBy, setSortBy] = useState<"updated" | "name">("updated");
+  const [sortBy, setSortBy] = useState<"updated" | "name">("name");
   const [trainerOverrides, setTrainerOverrides] = useState<Record<string, string[]>>({});
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSearch, setAssignSearch] = useState("");
@@ -1489,7 +1489,9 @@ export function ContentVaultRedesigned() {
         if (!expandedSubjects.has(subject.id)) continue;
 
         const sortedModules = [...visibleModules].sort((a, b) =>
-          sortBy === "updated" ? b.updated.localeCompare(a.updated) : a.name.localeCompare(b.name)
+          sortBy === "updated" 
+            ? b.updated.localeCompare(a.updated) 
+            : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
         );
         for (const module of sortedModules) {
           out.push({ kind: "module", module, subject, course, depth: 2 });
