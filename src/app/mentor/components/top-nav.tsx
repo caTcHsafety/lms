@@ -16,7 +16,7 @@ interface TopNavProps {
 
 const tabs: { id: MentorView; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "roster", label: "Cohort", icon: Users },
+  { id: "roster", label: "Batch", icon: Users },
   { id: "queue", label: "Evaluations", icon: Inbox },
 ];
 

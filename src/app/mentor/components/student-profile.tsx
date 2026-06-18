@@ -145,7 +145,7 @@ export function StudentProfile({
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-sm text-[#717182] hover:text-[#0c3455] mb-4"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to cohort
+        <ArrowLeft className="h-4 w-4" /> Back to batch
       </button>
 
       <div className="rounded-2xl bg-white border border-[#e5e7ec] p-6 mb-6">

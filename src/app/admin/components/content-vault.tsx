@@ -487,7 +487,7 @@ export function ContentVaultRedesigned() {
             );
           if (err3) throw err3;
         }
-        toast.success("Cohort updated successfully");
+        toast.success("Batch updated successfully");
       } else {
         // Create new cohort with required start_date and end_date
         const { data: newC, error: err1 } = await supabase
@@ -513,7 +513,7 @@ export function ContentVaultRedesigned() {
             );
           if (err2) throw err2;
         }
-        toast.success("Cohort created successfully");
+        toast.success("Batch created successfully");
         if (newC) {
           setSelectedCohortId(newC.id);
         }
@@ -521,21 +521,21 @@ export function ContentVaultRedesigned() {
       setCoDlgOpen(false);
       await loadVaultData();
     } catch (err: any) {
-      toast.error(err.message || "Failed to save cohort");
+      toast.error(err.message || "Failed to save batch");
     }
   };
 
   const deleteCohort = async (cohortId: string) => {
-    if (!confirm("Are you sure you want to delete this cohort? All student and module assignments will be removed.")) {
+    if (!confirm("Are you sure you want to delete this batch? All student and module assignments will be removed.")) {
       return;
     }
     try {
       const { error } = await supabase.from("cohorts").delete().eq("id", cohortId);
       if (error) throw error;
-      toast.success("Cohort deleted successfully");
+      toast.success("Batch deleted successfully");
       await loadVaultData();
     } catch (err: any) {
-      toast.error(err.message || "Failed to delete cohort");
+      toast.error(err.message || "Failed to delete batch");
     }
   };
 
@@ -1531,7 +1531,7 @@ export function ContentVaultRedesigned() {
       <div className="h-12 shrink-0 bg-white border-b border-[#e2e2e4] px-5 flex items-center gap-1">
         {([
           { id: "modules", label: "Modules", icon: <Layers className="size-3.5" /> },
-          { id: "cohorts", label: "Cohort Access", icon: <Users className="size-3.5" /> },
+          { id: "cohorts", label: "Batch Access", icon: <Users className="size-3.5" /> },
         ] as const).map((t) => {
           const active = subTab === t.id;
           return (
@@ -2020,9 +2020,9 @@ export function ContentVaultRedesigned() {
             <div className="px-5 pt-5 pb-3 border-b border-[#e2e2e4]">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h2 className="font-['Inter'] font-semibold text-[#0d2543]" style={{ fontSize: 18 }}>Cohorts</h2>
+                  <h2 className="font-['Inter'] font-semibold text-[#0d2543]" style={{ fontSize: 18 }}>Batches</h2>
                   <p className="font-['Inter'] text-xs text-[#74777E] mt-0.5">
-                    {cohorts.length} cohorts · {cohorts.reduce((s, c) => s + c.students, 0)} students
+                    {cohorts.length} batches · {cohorts.reduce((s, c) => s + c.students, 0)} students
                   </p>
                 </div>
                 <button
@@ -2030,7 +2030,7 @@ export function ContentVaultRedesigned() {
                   className="bg-[#00658d] hover:bg-[#004d6b] active:bg-[#003d54] text-white pl-3 pr-4 py-2 rounded-full font-['Inter'] font-semibold text-sm flex items-center gap-1.5 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#00658d] focus:ring-offset-2"
                 >
                   <Plus className="size-4" />
-                  New Cohort
+                  New Batch
                 </button>
               </div>
               <div className="relative">
@@ -2038,7 +2038,7 @@ export function ContentVaultRedesigned() {
                 <input
                   value={cohortSearch}
                   onChange={(e) => setCohortSearch(e.target.value)}
-                  placeholder="Search cohorts…"
+                  placeholder="Search batches…"
                   className="w-full bg-[#f3f3f5] border border-transparent rounded-md pl-8 pr-3 py-1.5 font-['Inter'] text-sm text-[#1a1c1d] placeholder-[#74777E] focus:bg-white focus:border-[#4493bf] focus:ring-2 focus:ring-[#4493bf] outline-none transition-all duration-150"
                 />
               </div>
@@ -2071,7 +2071,7 @@ export function ContentVaultRedesigned() {
                 })}
               {cohorts.length === 0 && (
                 <div className="px-5 py-6 text-center font-['Inter'] text-sm text-[#74777E]">
-                  No cohorts yet. Create one to assign course materials.
+                  No batches yet. Create one to assign course materials.
                 </div>
               )}
             </div>
@@ -2110,7 +2110,7 @@ export function ContentVaultRedesigned() {
                       className="bg-[#c0392b] hover:bg-[#a93226] text-white px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#c0392b]"
                     >
                       <Trash2 className="size-3.5" />
-                      Delete Cohort
+                      Delete Batch
                     </button>
                   </div>
                 </div>
@@ -2120,7 +2120,7 @@ export function ContentVaultRedesigned() {
                   {cohortModules.length === 0 ? (
                     <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-12 text-center">
                       <Users className="size-8 text-[#c4c6ce] mx-auto mb-3" />
-                      <p className="font-['Inter'] text-sm text-[#74777E] mb-4">No content assigned to this cohort yet.</p>
+                      <p className="font-['Inter'] text-sm text-[#74777E] mb-4">No content assigned to this batch yet.</p>
                       <button
                         onClick={() => openManageCohort(selectedCohort)}
                         className="bg-[#00658d] hover:bg-[#004d6b] text-white px-4 py-2 rounded-md font-['Inter'] font-semibold text-sm"
@@ -2190,7 +2190,7 @@ export function ContentVaultRedesigned() {
                       <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-8 text-center">
                         <GraduationCap className="size-7 text-[#c4c6ce] mx-auto mb-2" />
                         <p className="font-['Inter'] text-sm text-[#74777E]">
-                          No students enrolled in this cohort yet.
+                          No students enrolled in this batch yet.
                         </p>
                       </div>
                     ) : (
@@ -2262,7 +2262,7 @@ export function ContentVaultRedesigned() {
                       <div className="bg-white rounded-xl border border-dashed border-[#c4c6ce] p-8 text-center">
                         <FileUp className="size-7 text-[#c4c6ce] mx-auto mb-2" />
                         <p className="font-['Inter'] text-sm text-[#74777E]">
-                          No assignments given to this cohort yet.
+                          No assignments given to this batch yet.
                         </p>
                       </div>
                     ) : (

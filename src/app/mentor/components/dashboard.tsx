@@ -42,12 +42,12 @@ export function Dashboard({
         <h1 className="text-3xl font-semibold text-[#0c3455] tracking-tight">
           Welcome back, {displayName}!
         </h1>
-        <p className="text-sm text-[#717182] mt-1">Here is what is happening with your cohort today.</p>
+        <p className="text-sm text-[#717182] mt-1">Here is what is happening with your batch today.</p>
       </div>
 
       <div className="col-span-12 grid grid-cols-3 gap-4">
         <StatCard icon={Inbox} label="Pending evaluations" value={pendingCount} accent caption={`${pendingCount} in queue`} onClick={onOpenQueue} />
-        <StatCard icon={Users} label="Cohort size" value={students.length} caption={`${onTrack} progressing`} onClick={onOpenRoster} />
+        <StatCard icon={Users} label="Batch size" value={students.length} caption={`${onTrack} progressing`} onClick={onOpenRoster} />
         <StatCard icon={TrendingUp} label="Average progress" value={`${avgProgress}%`} caption={`${stalling.length} stalling`} />
       </div>
 
@@ -73,7 +73,7 @@ export function Dashboard({
             <div className="flex flex-col items-center justify-center p-8 bg-white border border-[#e5e7ec] rounded-2xl text-center">
               <Megaphone className="h-8 w-8 text-[#717182]/40 mb-3" />
               <div className="text-[#0c3455] font-semibold text-lg">No announcements</div>
-              <div className="text-sm text-[#717182] mt-1 max-w-sm mx-auto">There are no global or cohort broadcasts posted at this time.</div>
+              <div className="text-sm text-[#717182] mt-1 max-w-sm mx-auto">There are no global or batch broadcasts posted at this time.</div>
             </div>
           ) : (
             broadcasts.map((b) => (
@@ -86,7 +86,7 @@ export function Dashboard({
       <section className="col-span-12 lg:col-span-5 flex flex-col">
         <SectionHeader
           icon={Users}
-          title="Cohort health"
+          title="Batch health"
           subtitle="At-a-glance view of your assigned students"
         />
 

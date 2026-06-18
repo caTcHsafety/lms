@@ -17,7 +17,7 @@ export function Roster({
     <div>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-[#0c3455] text-xl">Cohort roster</h2>
+          <h2 className="text-[#0c3455] text-xl">Batch roster</h2>
           <p className="text-sm text-[#717182]">{students.length} students assigned to you</p>
         </div>
         <div className="relative">
