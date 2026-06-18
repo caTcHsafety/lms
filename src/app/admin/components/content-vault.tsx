@@ -111,6 +111,10 @@ export function ContentVaultRedesigned() {
   const [draftTrainers, setDraftTrainers] = useState<string[]>([]);
   const [trainers, setTrainers] = useState<any[]>([]);
 
+  // Module rename state
+  const [isRenamingModule, setIsRenamingModule] = useState(false);
+  const [tempModuleName, setTempModuleName] = useState("");
+
   // Course trainer assignment dialog
   const [courseTrainerDlgOpen, setCourseTrainerDlgOpen] = useState(false);
   const [selectedCourseForTrainer, setSelectedCourseForTrainer] = useState<Course | null>(null);
@@ -283,6 +287,52 @@ export function ContentVaultRedesigned() {
   useEffect(() => {
     loadVaultData();
   }, []);
+
+  // Handle module rename
+  const handleRenameModule = async () => {
+    if (!selectedModuleId || !tempModuleName.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from("modules")
+        .update({ title: tempModuleName.trim() })
+        .eq("id", selectedModuleId);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setCourses((prevCourses) =>
+        prevCourses.map((course) => ({
+          ...course,
+          subjects: course.subjects.map((subject) => ({
+            ...subject,
+            modules: subject.modules.map((module) =>
+              module.id === selectedModuleId
+                ? { ...module, name: tempModuleName.trim() }
+                : module
+            ),
+          })),
+        }))
+      );
+      
+      setIsRenamingModule(false);
+      toast.success("Module renamed successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to rename module");
+    }
+  };
+
+  const startRenaming = () => {
+    if (selectedModule) {
+      setTempModuleName(selectedModule.name);
+      setIsRenamingModule(true);
+    }
+  };
+
+  const cancelRenaming = () => {
+    setIsRenamingModule(false);
+    setTempModuleName("");
+  };
 
   // Fetch Versions for selected module
   useEffect(() => {
@@ -505,11 +555,25 @@ export function ContentVaultRedesigned() {
 
       const studentIds = csData.map((s: any) => s.student_id);
 
-      const [profilesRes, progressRes, submissionsRes, activityRes, assignmentsRes] = await Promise.all([
+      // Get the most recent activity per student (matching mentor portal approach)
+      const { data: allActivityData } = await supabase
+        .from("activity_events")
+        .select("user_id, created_at")
+        .in("user_id", studentIds)
+        .order("created_at", { ascending: false });
+
+      // Build last-activity map
+      const lastActivityMap = new Map<string, string>();
+      allActivityData?.forEach(evt => {
+        if (!lastActivityMap.has(evt.user_id)) {
+          lastActivityMap.set(evt.user_id, evt.created_at);
+        }
+      });
+
+      const [profilesRes, progressRes, submissionsRes, assignmentsRes] = await Promise.all([
         supabase.from("profiles").select("id, full_name, email, is_active").in("id", studentIds),
         supabase.from("student_progress").select("student_id, completed").in("student_id", studentIds),
         supabase.from("submissions").select("*").in("student_id", studentIds),
-        supabase.from("activity_events").select("user_id, created_at, event_type").in("user_id", studentIds).eq("event_type", "LOGIN").order("created_at", { ascending: false }),
         supabase.from("assignments").select("*, assignment_cohorts!inner(cohort_id)").eq("assignment_cohorts.cohort_id", cohortId),
       ]);
 
@@ -519,7 +583,8 @@ export function ContentVaultRedesigned() {
       const students: CohortStudent[] = (profilesRes.data || []).map((p: any) => {
         const completed = (progressRes.data || []).filter((pr: any) => pr.student_id === p.id && pr.completed).length;
         const subs = (submissionsRes.data || []).filter((s: any) => s.student_id === p.id).length;
-        const lastEvent = (activityRes.data || []).find((a: any) => a.user_id === p.id);
+        // Get last active directly from the map
+        const lastActiveTimestamp = lastActivityMap.get(p.id) || null;
 
         return {
           id: p.id,
@@ -529,7 +594,7 @@ export function ContentVaultRedesigned() {
           modulesCompleted: completed,
           totalModules: totalMods,
           submissionsCount: subs,
-          lastActive: lastEvent?.created_at || null,
+          lastActive: lastActiveTimestamp,
         };
       });
 
@@ -1732,7 +1797,11 @@ export function ContentVaultRedesigned() {
                 }
               }}
             />
-            <IconBtn icon={<Pencil className="size-4" />} label="Edit" />
+            <IconBtn 
+              icon={<Pencil className="size-4" />} 
+              label="Rename" 
+              onClick={startRenaming}
+            />
             <IconBtn icon={<Copy className="size-4" />} label="Duplicate" />
             <IconBtn icon={<Archive className="size-4" />} label="Archive" />
             <IconBtn
@@ -1765,7 +1834,40 @@ export function ContentVaultRedesigned() {
                 )}
               </div>
               <h1 className="font-['Inter'] font-semibold text-[#0d2543]" style={{ fontSize: 22 }}>
-                {selectedModule.name}
+                {isRenamingModule ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempModuleName}
+                      onChange={(e) => setTempModuleName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleRenameModule();
+                        } else if (e.key === "Escape") {
+                          cancelRenaming();
+                        }
+                      }}
+                      className="flex-1 px-3 py-1 border border-[#4493bf] rounded-md focus:outline-none focus:ring-2 focus:ring-[#4493bf]"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleRenameModule}
+                      className="p-1.5 bg-[#00658d] hover:bg-[#004d6b] text-white rounded-md transition-colors"
+                      title="Save"
+                    >
+                      <Check className="size-4" />
+                    </button>
+                    <button
+                      onClick={cancelRenaming}
+                      className="p-1.5 bg-[#74777E] hover:bg-[#44474e] text-white rounded-md transition-colors"
+                      title="Cancel"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ) : (
+                  selectedModule.name
+                )}
               </h1>
               <p className="font-['Inter'] text-sm text-[#74777E] mt-1">
                 Last updated {formatRelative(selectedModule.updated)} · Owner {selectedCourseCrumb?.owner}
