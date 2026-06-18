@@ -399,7 +399,7 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
   }
 
   return (
-    <div className="w-full px-4 md:px-8 lg:px-12 xl:px-16 py-6 h-[calc(100vh-80px)] flex flex-col gap-6">
+    <div className="w-full px-4 md:px-8 lg:px-12 xl:px-16 py-6 min-h-[calc(100vh-80px)] flex flex-col gap-6">
       
       {/* Offline Indicator Banner */}
       {!isOnline && (
@@ -457,8 +457,8 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex-1 min-h-0">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] gap-6 items-start">
           <div className="flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold" style={{ color: NAVY }}>Continue Learning</h3>
@@ -467,8 +467,8 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
                 <button className="p-1 hover:text-[#0D2543]"><ChevronRight className="w-4 h-4" /></button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 flex-1">
-              {courses.length === 0 && <div className="text-sm text-gray-400 col-span-2 flex items-center justify-center h-full">No active courses</div>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+              {courses.length === 0 && <div className="text-sm text-gray-400 col-span-full flex items-center justify-center py-10">No active courses</div>}
               {courses.map((c) => (
                 <CourseCard
                   key={c.id}
@@ -538,17 +538,17 @@ export function Dashboard({ onNavigate, onNavigateToCourse, onNavigateToAssignme
 
 function CourseCard({ title, coverTitle, progress, onClick }: { title: string; coverTitle: string; progress: number; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="text-left group flex flex-col h-full w-full">
+    <button onClick={onClick} className="group flex w-full flex-col text-left">
       <div
-        className="relative overflow-hidden rounded-lg flex-1 flex items-center justify-center w-full mb-3 min-h-[100px] px-5 text-center transition-transform group-hover:scale-[1.01]"
+       className="relative mb-3 flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg px-5 text-center transition-transform group-hover:scale-[1.01]"
         style={{
           background: "linear-gradient(135deg, #0D2543 0%, #24678f 50%, #4493BF 100%)",
         }}
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22),transparent_34%),radial-gradient(circle_at_85%_75%,rgba(255,255,255,0.16),transparent_32%)]" />
-        <div className="relative text-white text-lg font-bold leading-tight drop-shadow-sm">{coverTitle}</div>
+       <div className="relative line-clamp-2 text-white text-lg font-bold leading-tight drop-shadow-sm">{coverTitle}</div>
       </div>
-      <div className="text-sm font-medium mb-2 leading-snug w-full" style={{ color: NAVY }}>{title}</div>
+      <div className="mb-2 line-clamp-2 text-sm font-medium leading-snug w-full" style={{ color: NAVY }}>{title}</div>
       <div className="flex items-center gap-2 w-full mt-auto">
         <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div className="h-full" style={{ width: `${progress}%`, backgroundColor: BLUE }} />
@@ -572,4 +572,3 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
-

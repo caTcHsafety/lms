@@ -13,6 +13,7 @@ import { OfflineDownloadButton } from "@/components/OfflineDownloadButton";
 import { saveToOfflineVault, getOfflineVaultContents, addToOfflineVaultIndex } from "@/lib/offlineVault";
 import { get } from "idb-keyval";
 import { toast } from "sonner";
+import { SecurePDFViewer } from "./SecurePDFViewer";
 const BLUE = "#4493BF";
 const BLUE_TINT = "#E8F1F7";
 const NAVY = "#0D2543";
@@ -378,17 +379,29 @@ const enrolledCourses = courses;
       const isSlideFormat = current?.format === 'PDF' || current?.format === 'SLIDES' || current?.format === 'DOCUMENT' || current?.format === 'PPT' || current?.format === 'SCORM';
 
       if (current && current.url && isSlideFormat) {
-        // If the URL is an external/R2 URL (starts with https://), use it directly as iframe src
-        if (current.url.startsWith('https://') || current.url.startsWith('http://')) {
+        // Check if it's a Supabase Storage URL (even if full URL, extract path for private bucket access)
+        const supabaseStoragePattern = /storage\/v1\/object\/(public|sign|authenticated)\/module_content\/(.+)/;
+        const supabaseMatch = current.url.match(supabaseStoragePattern);
+        
+        // If it's an R2 URL (SCORM), use it directly as iframe src
+        if (current.url.includes('r2.dev/content/') || current.url.includes('index.html')) {
           if (isMounted) setSlideViewUrl(current.url);
           return;
         }
 
-        // Otherwise it's a Supabase storage path — download as blob
-        let cleanPath = current.url || '';
-        if (cleanPath.includes('module_content/')) {
-            cleanPath = cleanPath.split('module_content/')[1];
+        // If it's a Supabase Storage URL, extract the path and download as blob
+        let cleanPath = '';
+        if (supabaseMatch) {
+          // Extract path from full Supabase URL
+          cleanPath = supabaseMatch[2];
+        } else if (current.url.includes('module_content/')) {
+          // Handle path-only format
+          cleanPath = current.url.split('module_content/')[1];
+        } else {
+          // Unknown format
+          cleanPath = current.url;
         }
+        
         cleanPath = decodeURIComponent(cleanPath.split('?')[0]).replace(/^\/+/, '').replace(/\/+$/, '');
 
         if (!cleanPath) {
@@ -397,6 +410,7 @@ const enrolledCourses = courses;
         }
 
         try {
+            console.log('Downloading PDF from path:', cleanPath);
             const { data: blob, error } = await supabase.storage.from('module_content').download(cleanPath);
 
             if (error || !blob) {
@@ -405,11 +419,14 @@ const enrolledCourses = courses;
                 return;
             }
 
+            console.log('PDF blob downloaded successfully, size:', blob.size);
+
             // Create an isolated local memory URL for the iframe
             if (isMounted) {
               const objectUrl = URL.createObjectURL(blob);
               objectUrlToRevoke = objectUrl;
-              setSlideViewUrl(objectUrl + '#toolbar=0');
+              console.log('Created blob URL:', objectUrl);
+              setSlideViewUrl(objectUrl);
             }
 
         } catch (err) {
@@ -1287,23 +1304,8 @@ function ISpringStudentViewer({ url, lessonTitle }: { url: string; lessonTitle: 
 }
 
 function SlideViewer({ lessonTitle, slideUrl, isDownloaded, onDownload, downloadProgress }: { lessonTitle: string, slideUrl?: string | null, isDownloaded: boolean, onDownload: () => void, downloadProgress: number | null }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  const toggleFullscreen = () => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    if (!document.fullscreenElement) {
-      if (iframe.requestFullscreen) {
-        iframe.requestFullscreen().catch(console.error);
-      } else if ((iframe as any).webkitRequestFullscreen) {
-        (iframe as any).webkitRequestFullscreen();
-      }
-    } else {
-      document.exitFullscreen().catch(console.error);
-    }
-  };
-
+  const { user } = useAuth();
+  
   if (!slideUrl) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-16 text-center bg-gray-50 rounded-lg">
@@ -1315,16 +1317,31 @@ function SlideViewer({ lessonTitle, slideUrl, isDownloaded, onDownload, download
     );
   }
 
+  // Check if it's a PDF (blob URL or .pdf extension)
+  const isPDF = slideUrl.startsWith('blob:') || slideUrl.toLowerCase().endsWith('.pdf');
+
+  if (isPDF) {
+    // Use secure PDF viewer
+    const studentName = user?.user_metadata?.full_name || user?.email || 'Student';
+    return (
+      <SecurePDFViewer 
+        pdfUrl={slideUrl} 
+        lessonTitle={lessonTitle}
+        studentName={studentName}
+      />
+    );
+  }
+
+  // For non-PDF files (like SCORM), keep using iframe
   return (
-    <div ref={containerRef} className="h-full w-full bg-white rounded-lg shadow-sm border border-[#0D2543]/10 overflow-hidden relative">
-      <iframe ref={iframeRef} src={slideUrl} className="w-full h-full border-none" title={lessonTitle} style={{ backgroundColor: 'white' }} allowFullScreen />
-      <button
-        onClick={toggleFullscreen}
-        className="absolute bottom-3 right-3 size-9 rounded-lg bg-gray-800/70 hover:bg-gray-800/90 text-white flex items-center justify-center backdrop-blur-sm transition-colors shadow-md"
-        title="Toggle Full Screen"
-      >
-        <Maximize2 className="w-4 h-4" />
-      </button>
+    <div className="h-full w-full bg-white rounded-lg shadow-sm border border-[#0D2543]/10 overflow-hidden relative">
+      <iframe 
+        src={slideUrl} 
+        className="w-full h-full border-none" 
+        title={lessonTitle} 
+        style={{ backgroundColor: 'white' }} 
+        allowFullScreen
+      />
     </div>
   );
 }

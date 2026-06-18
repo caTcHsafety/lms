@@ -103,7 +103,7 @@ export function DocxBlockEditor({
         switch (block.type) {
           case "heading":
             return (
-              <div key={block.id} className="my-4">
+              <div key={block.id} className="my-4 [&_img]:max-w-full [&_img]:h-auto [&_img]:my-2 [&_img]:rounded-md">
                 {block.level === 1 && (
                   <h1 className="text-2xl font-bold text-[#0d2543]" dangerouslySetInnerHTML={{ __html: block.content }} />
                 )}
@@ -123,7 +123,7 @@ export function DocxBlockEditor({
             return (
               <div
                 key={block.id}
-                className="my-2 text-sm text-[#1a1c1d] leading-relaxed"
+                className="my-2 text-sm text-[#1a1c1d] leading-relaxed [&_img]:max-w-full [&_img]:h-auto [&_img]:my-3 [&_img]:rounded-md [&_img]:shadow-sm"
                 dangerouslySetInnerHTML={{ __html: block.content }}
               />
             );

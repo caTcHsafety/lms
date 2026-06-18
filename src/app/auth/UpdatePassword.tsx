@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
@@ -12,8 +12,20 @@ export default function UpdatePassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isRecovery, setIsRecovery] = useState(false);
   const navigate = useNavigate();
   const { user, role } = useAuth();
+
+  // Handle password recovery from email link
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('type=recovery')) {
+      setIsRecovery(true);
+      // Supabase automatically handles the session from the hash
+      // Just need to clear the hash from URL after processing
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,8 +73,14 @@ export default function UpdatePassword() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8 border border-gray-100">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-[#0D2543]">Update Required</h2>
-          <p className="text-gray-500 mt-2 text-sm">Please set a new secure password to continue</p>
+          <h2 className="text-2xl font-bold text-[#0D2543]">
+            {isRecovery ? 'Reset Your Password' : 'Update Required'}
+          </h2>
+          <p className="text-gray-500 mt-2 text-sm">
+            {isRecovery 
+              ? 'Enter a new secure password for your account' 
+              : 'Please set a new secure password to continue'}
+          </p>
         </div>
 
         {error && (

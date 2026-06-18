@@ -12,10 +12,23 @@ export interface DocBlock {
 /**
  * Parse a DOCX file into an array of structured blocks.
  * Detects [ANSWER] placeholders and ____ sequences as answer zones.
+ * Preserves images as base64 data URLs.
  */
 export async function parseDocxToBlocks(file: File): Promise<DocBlock[]> {
   const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.convertToHtml({ arrayBuffer });
+  
+  // Configure mammoth to convert images to data URLs
+  const result = await mammoth.convertToHtml({
+    arrayBuffer,
+    convertImage: mammoth.images.imgElement(function(image) {
+      return image.read("base64").then(function(imageBuffer) {
+        return {
+          src: "data:" + image.contentType + ";base64," + imageBuffer
+        };
+      });
+    })
+  });
+  
   const html = result.value;
 
   // Parse HTML into DOM
@@ -31,9 +44,12 @@ export async function parseDocxToBlocks(file: File): Promise<DocBlock[]> {
     const tagName = el.tagName.toLowerCase();
     const innerHTML = el.innerHTML;
     const textContent = el.textContent || "";
+    
+    // Check if element contains an image
+    const hasImage = el.querySelector('img') !== null;
 
     // Check if this element contains answer zone markers
-    if (isAnswerZone(textContent)) {
+    if (isAnswerZone(textContent) && !hasImage) {
       answerIndex++;
       blocks.push({
         id: `q${answerIndex}`,
@@ -66,7 +82,7 @@ export async function parseDocxToBlocks(file: File): Promise<DocBlock[]> {
     }
 
     // Check if paragraph contains mixed content with answer zones
-    if (containsAnswerMarker(textContent)) {
+    if (containsAnswerMarker(textContent) && !hasImage) {
       // Split the paragraph around answer markers
       const parts = splitAroundAnswerZones(innerHTML, textContent);
       for (const part of parts) {
@@ -88,8 +104,8 @@ export async function parseDocxToBlocks(file: File): Promise<DocBlock[]> {
       continue;
     }
 
-    // Default: paragraph
-    if (textContent.trim()) {
+    // Default: paragraph (includes paragraphs with images)
+    if (textContent.trim() || hasImage) {
       blocks.push({
         id: `block-${i}`,
         type: "paragraph",
