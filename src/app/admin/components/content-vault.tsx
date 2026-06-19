@@ -753,12 +753,14 @@ export function ContentVaultRedesigned() {
 
   const kindFromName = (name: string): ContentType => {
     const ext = name.toLowerCase().split(".").pop() ?? "";
-    if (["mp4", "mov", "webm", "avi", "mkv"].includes(ext)) return "VIDEO";
-    if (["ppt", "pptx", "key"].includes(ext)) return "PPT";
+    // Auto-detect content type based on file extension
+    if (["mp4", "mov", "webm", "avi", "mkv", "flv", "wmv", "m4v"].includes(ext)) return "VIDEO";
+    if (["ppt", "pptx", "key", "odp"].includes(ext)) return "PPT";
     if (["pdf"].includes(ext)) return "PDF";
-    if (["doc", "docx", "rtf", "txt"].includes(ext)) return "PDF";
-    if (["zip", "scorm"].includes(ext)) return "SCORM";
-    return "LINK";
+    if (["doc", "docx", "txt", "rtf", "odt"].includes(ext)) return "DOCUMENT";
+    if (["zip", "scorm"].includes(ext) || name.toLowerCase().includes("scorm")) return "SCORM";
+    // Default fallback
+    return "DOCUMENT";
   };
   const openUploadDialog = () => {
     setUpFiles([]);
@@ -1198,11 +1200,18 @@ export function ContentVaultRedesigned() {
         const file = revFiles[0];
         const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
         
-        let newFormat: ContentType = "VIDEO";
-        if (['pdf', 'ppt', 'pptx', 'doc', 'docx'].includes(fileExt)) {
-          newFormat = ['pdf', 'doc', 'docx'].includes(fileExt) ? "DOCUMENT" : "SLIDES";
-        } else if (['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(fileExt)) {
+        // Auto-detect module type based on uploaded file extension
+        let newFormat: ContentType = "DOCUMENT"; // default fallback
+        if (['mp4', 'mov', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm4v'].includes(fileExt)) {
           newFormat = "VIDEO";
+        } else if (['ppt', 'pptx', 'key', 'odp'].includes(fileExt)) {
+          newFormat = "PPT";
+        } else if (['pdf'].includes(fileExt)) {
+          newFormat = "PDF";
+        } else if (['doc', 'docx', 'txt', 'rtf', 'odt'].includes(fileExt)) {
+          newFormat = "DOCUMENT";
+        } else if (['zip', 'scorm'].includes(fileExt) || file.name.toLowerCase().includes('scorm')) {
+          newFormat = "SCORM";
         }
 
         let contentUrl = "";
@@ -1240,10 +1249,23 @@ export function ContentVaultRedesigned() {
           .update({ is_published: false, status: 'Archived' })
           .eq("module_id", selectedModuleId);
           
+        // Update module type based on detected file type
+        const currentModule = courses
+          .flatMap(c => c.subjects)
+          .flatMap(s => s.modules)
+          .find(m => m.id === selectedModuleId);
+        
+        const typeChanged = currentModule && currentModule.type !== newFormat;
+        
         await supabase
           .from("modules")
           .update({ type: newFormat })
           .eq("id", selectedModuleId);
+        
+        // Notify user if type was auto-detected and changed
+        if (typeChanged) {
+          toast.info(`Module type automatically detected as ${newFormat} based on file extension`);
+        }
 
         const { data: newVer, error: insertError } = await supabase
           .from("module_versions")
